@@ -1,0 +1,61 @@
+# Sudoku Generator and Solver in Go
+
+Toy project to learn Go. Generates and solves Sudoku puzzles.
+
+Unlike most Sudoku generators I found, this one does not start with a solved puzzle and removes numbers.
+Instead, it starts with an empty grid and fills it with random numbers. I did not like the idea of having
+to generate a valid solved puzzle first, even though that should be quite straightforward by shuffling a
+hard-coded solution, so I went for this approach instead, because I like the challenge of approaching it
+differently than the algorithms I found when doing some research before starting.
+
+Example output:
+
+```
+Generated Sudoku:
+   |-----------|-----------|-----------|
+   |     3   1 | 9   2   7 |     5     |
+   |           |           |           |
+   | 9   5     |     3   6 |           |
+   |           |           |           |
+   |         2 |           | 7   3     |
+   |-----------|-----------|-----------|
+   | 2         | 6   5     |         3 |
+   |           |           |           |
+   |     7     |     8   9 | 2         |
+   |           |           |           |
+   |           | 2   7     | 6         |
+   |-----------|-----------|-----------|
+   |     4     |           |           |
+   |           |           |           |
+   |         5 |     1     | 3         |
+   |           |           |           |
+   | 7   8   9 | 5       3 | 4       1 |
+   |-----------|-----------|-----------|
+
+Solution:
+   |-----------|-----------|-----------|
+   | 4   3   1 | 9   2   7 | 8   5   6 |
+   |           |           |           |
+   | 9   5   7 | 8   3   6 | 1   4   2 |
+   |           |           |           |
+   | 8   6   2 | 1   4   5 | 7   3   9 |
+   |-----------|-----------|-----------|
+   | 2   1   8 | 6   5   4 | 9   7   3 |
+   |           |           |           |
+   | 5   7   6 | 3   8   9 | 2   1   4 |
+   |           |           |           |
+   | 3   9   4 | 2   7   1 | 6   8   5 |
+   |-----------|-----------|-----------|
+   | 1   4   3 | 7   9   2 | 5   6   8 |
+   |           |           |           |
+   | 6   2   5 | 4   1   8 | 3   9   7 |
+   |           |           |           |
+   | 7   8   9 | 5   6   3 | 4   2   1 |
+   |-----------|-----------|-----------|
+
+```
+
+More things to try:
+
+- TUI for playing Sudoku
+- Integrate with a simple web server to play Sudoku in the browser
