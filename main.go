@@ -1,9 +1,8 @@
 package main
 
 import (
+    "flag"
     "fmt"
-    // "log"
-    // "os"
     "math/rand/v2"
     "strings"
 )
@@ -332,7 +331,7 @@ func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, ga
     }
 }
 
-func main() {
+func runPrint() {
     sudoku := generateSudoku()
     println("Generated Sudoku:")
     printBoard(sudoku.board)
@@ -342,5 +341,23 @@ func main() {
     } else {
         println("Solution:")
         printBoard(solvedSudoku)
+    }
+}
+
+func main() {
+    var (
+        print = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
+    )
+    flag.Usage = func() {
+        fmt.Fprintf(flag.CommandLine.Output(),
+            "Usage: sugoku [-print]\n")
+        flag.PrintDefaults()
+    }
+    flag.Parse()
+
+    if *print {
+        runPrint()
+    } else {
+        runTui()
     }
 }

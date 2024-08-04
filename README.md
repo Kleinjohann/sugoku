@@ -8,7 +8,26 @@ to generate a valid solved puzzle first, even though that should be quite straig
 hard-coded solution, so I went for this approach instead, because I like the challenge of approaching it
 differently than the algorithms I found when doing some research before starting.
 
-Example output:
+## Installation
+
+Requires Go, see [here](https://golang.org/doc/install) for installation instructions.
+
+```bash
+go install github.com/kleinjohann/sugoku@latest
+```
+
+Note that this will install the program in your `$GOPATH/bin` directory. Make sure that this directory is in your `$PATH` to be able to run the program from anywhere.
+
+## Usage
+
+```bash
+sugoku [--print]
+```
+
+When the `--print` flag is set, the program simply prints a generated Sudoku and its solution.
+Otherwise, you are presented with a TUI to solve a randomly generated Sudoku puzzle.
+
+Example output of `sugoku --print`:
 
 ```
 Generated Sudoku:
@@ -55,7 +74,12 @@ Solution:
 
 ```
 
-More things to try:
+## Planned Improvements
 
-- TUI for playing Sudoku
+- Improve the TUI
+    - Add a help screen with the keybindings
+    - Highlight current row, column, and box
+    - Check for mistakes and highlight them
+    - Check if the puzzle is solved, and if so, display a message
+    - Maybe find a way to add pencil marks?
 - Integrate with a simple web server to play Sudoku in the browser
