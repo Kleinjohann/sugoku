@@ -278,6 +278,24 @@ func getRandomEmptyCell(board [9][9]uint8) (int, int) {
     }
 }
 
+func cellsSeeEachOther(row1 int, col1 int, row2 int, col2 int) bool {
+    return (row1 == row2 || col1 == col2 || (row1 / 3 == row2 / 3 && col1 / 3 == col2 / 3))
+}
+
+func numberIsComplete(game Sudoku, number uint8) bool {
+    if number == 0 {
+        return false
+    }
+    for i := 0; i < 9; i++ {
+        for j := 0; j < 9; j++ {
+            if game.solution[i][j] == number && game.board[i][j] != number {
+                return false
+            }
+        }
+    }
+    return true
+}
+
 func printBoard(board [9][9]uint8) {
     leftPad := "   "
     hPad := " "

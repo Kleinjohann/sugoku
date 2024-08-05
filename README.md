@@ -78,8 +78,7 @@ Solution:
 
 - Improve the TUI
     - Add a help screen with the keybindings
-    - Highlight current row, column, and box
-    - Check for mistakes and highlight them
-    - Check if the puzzle is solved, and if so, display a message
+    - If the puzzle is solved display a prompt to start a new puzzle or quit
     - Maybe find a way to add pencil marks?
+        - Could enlarge everything and make actual numbers larger ASCII art
 - Integrate with a simple web server to play Sudoku in the browser

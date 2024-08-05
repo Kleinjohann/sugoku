@@ -15,10 +15,13 @@ type model struct {
     cursor   [2]int
 }
 
-var cursorUneditableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("7"))
-var cursorEditableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("3"))
-var editableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Background(lipgloss.Color("0"))
-var uneditableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Background(lipgloss.Color("0"))
+var cursorBackground = lipgloss.Color("3")
+var visibleFromCursorBackground = lipgloss.Color("18")
+var cursorNumberBackground = lipgloss.Color("8")
+var wrongNumberForeground = lipgloss.Color("1")
+var completedNumberForeground = lipgloss.Color("2")
+var editableForeground = lipgloss.Color("4")
+var uneditableForeground = lipgloss.Color("15")
 
 func initialModel() model {
     game := generateSudoku()
@@ -100,6 +103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
     var currentCell string
+    var currentStyle lipgloss.Style
     leftPad := "   "
     hPad := " "
     vPad := "\n"
@@ -114,6 +118,7 @@ func (m model) View() string {
     builder.WriteString("|" + vPad)
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
+            currentStyle = lipgloss.NewStyle()
             if j == 0 {
                 builder.WriteString(leftPad + "|" + hPad)
             } else if j % 3 == 0 && j != 0 {
@@ -121,22 +126,30 @@ func (m model) View() string {
             } else {
                 builder.WriteString(strings.Repeat(hPad, 2) + " ")
             }
+            if m.editable[i][j] {
+                currentStyle = currentStyle.Foreground(editableForeground)
+            } else {
+                currentStyle = currentStyle.Foreground(uneditableForeground)
+            }
             if m.game.board[i][j] == 0 {
                 currentCell = " "
             } else {
                 currentCell = fmt.Sprintf("%d", m.game.board[i][j])
+                if m.game.board[i][j] == m.game.board[m.cursor[0]][m.cursor[1]] {
+                    currentStyle = currentStyle.Background(cursorNumberBackground)
+                }
             }
             if m.cursor[0] == i && m.cursor[1] == j {
-                if m.editable[i][j] {
-                    builder.WriteString(cursorEditableStyle.Render(currentCell))
-                } else {
-                    builder.WriteString(cursorUneditableStyle.Render(currentCell))
-                }
-            } else if m.editable[i][j] {
-                builder.WriteString(editableStyle.Render(currentCell))
-            } else {
-                builder.WriteString(uneditableStyle.Render(currentCell))
+                currentStyle = currentStyle.Background(cursorBackground)
+            } else if cellsSeeEachOther(m.cursor[0], m.cursor[1], i, j) {
+                currentStyle = currentStyle.Background(visibleFromCursorBackground)
             }
+            if m.game.board[i][j] != 0 && m.game.board[i][j] != m.game.solution[i][j] {
+                currentStyle = currentStyle.Foreground(wrongNumberForeground)
+            } else if numberIsComplete(m.game, m.game.board[i][j]) {
+                currentStyle = currentStyle.Foreground(completedNumberForeground)
+            }
+            builder.WriteString(currentStyle.Render(currentCell))
         }
         builder.WriteString(hPad + "|" + vPad + leftPad + "|")
         if i % 3 == 2 {
