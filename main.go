@@ -9,6 +9,7 @@ import (
 
 type Sudoku struct {
     board [9][9]uint8
+    solution [9][9]uint8
     candidates [9][9][9]bool
 }
 
@@ -97,6 +98,7 @@ func fillRandomCell(game *Sudoku) {
 
 func generateSudoku() Sudoku {
     game := makeEmptySudoku()
+    var currentSolution [9][9]uint8
     var numSolutions int
     previousNumSolutions := 2
     var previousGame Sudoku
@@ -112,11 +114,15 @@ func generateSudoku() Sudoku {
         if isRetry {
             numSolutions = previousNumSolutions
         } else {
-            numSolutions = getNumSolutions(game)
+            numSolutions, currentSolution = getNumSolutions(game)
         }
         if numSolutions == 1 {
             if !isValidUnsolvedBoard(game.board) {
                 panic("Invalid Sudoku")
+            }
+            game.solution = currentSolution
+            if !isValidSolvedBoard(game.solution) {
+                panic("Invalid Solution")
             }
             return game
         } else if numSolutions == 0 {
@@ -131,7 +137,7 @@ func generateSudoku() Sudoku {
     }
 }
 
-func getNumSolutions(game Sudoku) int {
+func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
     currentGame := copySudoku(game)
     var candidates []uint8
     var err error
@@ -156,7 +162,7 @@ func getNumSolutions(game Sudoku) int {
                         if currentSolution != lastSolution {
                             numSolutions++
                             if numSolutions > 1 {
-                                return numSolutions
+                                return numSolutions, currentSolution
                             }
                             lastSolution = currentSolution
                         }
@@ -164,12 +170,20 @@ func getNumSolutions(game Sudoku) int {
                     currentGame = copySudoku(previousGame)
                 }
                 if currentNumSolutions == 0 {
-                    return 0
+                    return 0, currentSolution
                 }
             }
         }
     }
-    return numSolutions
+    if numSolutions != 1 {
+        panic("Not exactly one solution after looping through all cells")
+    }
+    // if the last call to solveSudoku was unsuccessful,
+    // currentSolution does not contain a valid solution
+    if err != nil {
+        return numSolutions, lastSolution
+    }
+    return numSolutions, currentSolution
 }
 
 func solveSudoku(game Sudoku) ([9][9]uint8, error) {
@@ -335,13 +349,8 @@ func runPrint() {
     sudoku := generateSudoku()
     println("Generated Sudoku:")
     printBoard(sudoku.board)
-    solvedSudoku, err := solveSudoku(sudoku)
-    if err != nil {
-        fmt.Println("No solution found")
-    } else {
-        println("Solution:")
-        printBoard(solvedSudoku)
-    }
+    println("Solution:")
+    printBoard(sudoku.solution)
 }
 
 func main() {
