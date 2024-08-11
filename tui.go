@@ -102,7 +102,7 @@ var keys = keyMap{
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-    return []key.Binding{k.Quit}
+    return []key.Binding{k.NewGame, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -111,7 +111,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
          k.Up3, k.Down3, k.Left3, k.Right3,
          k.Number, k.Candidate, k.Delete,
          k.ComputeCandidates, k.WipeCandidates,
-         k.Quit},
+         k.NewGame, k.Quit},
     }
 }
 
@@ -242,12 +242,19 @@ func (m model) View() string {
     renderedTable := t.Render()
 
     tableWidth := lipgloss.Width(renderedTable)
+    tableHeight := lipgloss.Height(renderedTable)
+
+    if isValidSolvedBoard(m.game.board) {
+        m.help.ShowAll = false
+        winMessage := lipgloss.NewStyle().Foreground(completedNumberForeground).Render("You won!")
+        renderedTable = lipgloss.Place(tableWidth, tableHeight, lipgloss.Center, lipgloss.Center, winMessage)
+    }
 
     m.help.Width = m.width - tableWidth - 1
     helpView := m.help.View(m.keys)
 
     return lipgloss.JoinHorizontal(lipgloss.Top,
-        t.Render(),
+        renderedTable,
         " ",
         helpView,
     )

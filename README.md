@@ -80,6 +80,8 @@ Solution:
 
 ## Planned Improvements
 
-- Improve the TUI
-    - If the puzzle is solved display a prompt to start a new puzzle or quit
+- Add a difficulty metric and let the user choose the difficulty of the generated puzzle
+    - Implement a solver that employs different strategies human players use to solve puzzles
+    - Rank the strategies by difficulty and always apply them in order of increasing difficulty
+    - Puzzle difficulty is then determined by number and difficulty of required strategies
 - Integrate with a simple web server to play Sudoku in the browser
