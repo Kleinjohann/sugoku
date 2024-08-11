@@ -77,6 +77,5 @@ Solution:
 ## Planned Improvements
 
 - Improve the TUI
-    - Add a help screen with the keybindings
     - If the puzzle is solved display a prompt to start a new puzzle or quit
 - Integrate with a simple web server to play Sudoku in the browser

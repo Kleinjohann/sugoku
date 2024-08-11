@@ -4,15 +4,115 @@ import (
     "fmt"
     "os"
 
+    "github.com/charmbracelet/bubbles/help"
+    "github.com/charmbracelet/bubbles/key"
+    tea "github.com/charmbracelet/bubbletea"
     "github.com/charmbracelet/lipgloss"
     "github.com/charmbracelet/lipgloss/table"
-    tea "github.com/charmbracelet/bubbletea"
 )
 
 type model struct {
-    game  Sudoku
+    game     Sudoku
     editable [9][9]bool
     cursor   [2]int
+    keys     keyMap
+    help     help.Model
+    width    int
+}
+
+type keyMap struct {
+    Up                key.Binding
+    Down              key.Binding
+    Left              key.Binding
+    Right             key.Binding
+    Up3               key.Binding
+    Down3             key.Binding
+    Left3             key.Binding
+    Right3            key.Binding
+    Number            key.Binding
+    Candidate         key.Binding
+    Delete            key.Binding
+    ComputeCandidates key.Binding
+    WipeCandidates    key.Binding
+    NewGame           key.Binding
+    Quit              key.Binding
+}
+
+var keys = keyMap{
+    Up: key.NewBinding(
+        key.WithKeys("up", "k"),
+        key.WithHelp("↑/k", "move up"),
+    ),
+    Down: key.NewBinding(
+        key.WithKeys("down", "j"),
+        key.WithHelp("↓/j", "move down"),
+    ),
+    Left: key.NewBinding(
+        key.WithKeys("left", "h"),
+        key.WithHelp("←/h", "move left"),
+    ),
+    Right: key.NewBinding(
+        key.WithKeys("right", "l"),
+        key.WithHelp("→/l", "move right"),
+    ),
+    Up3: key.NewBinding(
+        key.WithKeys("shift+up", "K"),
+        key.WithHelp("shift+↑/K", "move up 3 cells"),
+    ),
+    Down3: key.NewBinding(
+        key.WithKeys("shift+down", "J"),
+        key.WithHelp("shift+↓/J", "move down 3 cells"),
+    ),
+    Left3: key.NewBinding(
+        key.WithKeys("shift+left", "H"),
+        key.WithHelp("shift+←/H", "move left 3 cells"),
+    ),
+    Right3: key.NewBinding(
+        key.WithKeys("shift+right", "L"),
+        key.WithHelp("shift+→/L", "move right 3 cells"),
+    ),
+    Number: key.NewBinding(
+        key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+        key.WithHelp("1-9", "enter number"),
+    ),
+    Candidate: key.NewBinding(
+        key.WithKeys("!", "@", "#", "$", "%", "^", "&", "*", "("),
+        key.WithHelp("shift+1-9", "toggle pencil mark"),
+    ),
+    Delete: key.NewBinding(
+        key.WithKeys("x", "bsp", "del"),
+        key.WithHelp("x/bsp/del", "delete number/pencil marks"),
+    ),
+    ComputeCandidates: key.NewBinding(
+        key.WithKeys("c"),
+        key.WithHelp("c", "compute all pencil marks"),
+    ),
+    WipeCandidates: key.NewBinding(
+        key.WithKeys("C"),
+        key.WithHelp("C", "wipe all pencil marks"),
+    ),
+    NewGame: key.NewBinding(
+        key.WithKeys("n"),
+        key.WithHelp("n", "new game"),
+    ),
+    Quit: key.NewBinding(
+        key.WithKeys("q", "esc", "ctrl+c"),
+        key.WithHelp("q", "quit"),
+    ),
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+    return []key.Binding{k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+    return [][]key.Binding{
+        {k.Up, k.Down, k.Left, k.Right,
+         k.Up3, k.Down3, k.Left3, k.Right3,
+         k.Number, k.Candidate, k.Delete,
+         k.ComputeCandidates, k.WipeCandidates,
+         k.Quit},
+    }
 }
 
 var cursorBackground = lipgloss.Color("3")
@@ -35,11 +135,15 @@ func initialModel() model {
         }
     }
     game.candidates = [9][9][9]bool{}
-    return model{
-        game: game,
+    m := model{
+        game:     game,
         editable: editable,
-        cursor: [2]int{4, 4},
+        cursor:   [2]int{4, 4},
+        keys:     keys,
+        help:     help.New(),
     }
+    m.help.ShowAll = true
+    return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -49,50 +153,56 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
 
+    case tea.WindowSizeMsg:
+        m.width = msg.Width
+
     case tea.KeyMsg:
 
-        switch msg.String() {
+        switch {
 
-        case "ctrl+c", "q":
+        case key.Matches(msg, keys.Quit):
             fmt.Print("\n")
             return m, tea.Quit
 
-        case "up", "k":
+        case key.Matches(msg, keys.NewGame):
+            return initialModel(), nil
+
+        case key.Matches(msg, keys.Up):
             m.cursor[0] = (m.cursor[0] - 1 + 9) % 9
 
-        case "down", "j":
+        case key.Matches(msg, keys.Down):
             m.cursor[0] = (m.cursor[0] + 1) % 9
 
-        case "left", "h":
+        case key.Matches(msg, keys.Left):
             m.cursor[1] = (m.cursor[1] - 1 + 9) % 9
 
-        case "right", "l":
+        case key.Matches(msg, keys.Right):
             m.cursor[1] = (m.cursor[1] + 1) % 9
 
-        case "shift+up", "K":
+        case key.Matches(msg, keys.Up3):
             m.cursor[0] = (m.cursor[0] - 3 + 9) % 9
 
-        case "shift+down", "J":
+        case key.Matches(msg, keys.Down3):
             m.cursor[0] = (m.cursor[0] + 3) % 9
 
-        case "shift+left", "H":
+        case key.Matches(msg, keys.Left3):
             m.cursor[1] = (m.cursor[1] - 3 + 9) % 9
 
-        case "shift+right", "L":
+        case key.Matches(msg, keys.Right3):
             m.cursor[1] = (m.cursor[1] + 3) % 9
 
-        case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+        case key.Matches(msg, keys.Number):
             if m.editable[m.cursor[0]][m.cursor[1]] {
                 m.game.board[m.cursor[0]][m.cursor[1]] = uint8(msg.String()[0] - '0')
             }
 
-        case "!", "@", "#", "$", "%", "^", "&", "*", "(":
+        case key.Matches(msg, keys.Candidate):
             number := getNumberFromShiftedDigit(msg.String())
             if m.editable[m.cursor[0]][m.cursor[1]] {
                 toggleCandidate(m.cursor[0], m.cursor[1], number, &m.game)
             }
 
-        case "x", "backspace", "delete":
+        case key.Matches(msg, keys.Delete):
             if m.editable[m.cursor[0]][m.cursor[1]] {
                 if m.game.board[m.cursor[0]][m.cursor[1]] == 0 {
                     m.game.candidates[m.cursor[0]][m.cursor[1]] = [9]bool{}
@@ -101,10 +211,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 }
             }
 
-        case "c":
+        case key.Matches(msg, keys.ComputeCandidates):
             computeCandidates(&m.game)
 
-        case "C":
+        case key.Matches(msg, keys.WipeCandidates):
             wipeCandidates(&m.game)
         }
     }
@@ -118,7 +228,7 @@ func (m model) View() string {
     for i := 0; i < 3; i++ {
         row := []string{}
         for j := 0; j < 3; j++ {
-            boxId = 3 * i + j
+            boxId = 3*i + j
             box := getBoxString(boxId, m, pagga, 3, 7)
             row = append(row, box)
         }
@@ -129,8 +239,18 @@ func (m model) View() string {
         BorderStyle(lipgloss.NewStyle().Foreground(uneditableForeground)).
         BorderRow(true).
         Rows(rows...)
+    renderedTable := t.Render()
 
-    return t.String()
+    tableWidth := lipgloss.Width(renderedTable)
+
+    m.help.Width = m.width - tableWidth - 1
+    helpView := m.help.View(m.keys)
+
+    return lipgloss.JoinHorizontal(lipgloss.Top,
+        t.Render(),
+        " ",
+        helpView,
+    )
 }
 
 func getCellStyle(m model, row int, col int) lipgloss.Style {
@@ -178,11 +298,11 @@ func getCellString(game Sudoku, row int, col int, font asciiFont, height int, wi
         background = " "
     }
     cellString := lipgloss.Place(width,
-                                 height,
-                                 lipgloss.Center,
-                                 lipgloss.Center,
-                                 digitString,
-                                 lipgloss.WithWhitespaceChars(background))
+        height,
+        lipgloss.Center,
+        lipgloss.Center,
+        digitString,
+        lipgloss.WithWhitespaceChars(background))
     return cellString
 }
 
@@ -194,7 +314,7 @@ func getCandidatesString(candidates []uint8) string {
     for i := 0; i < 3; i++ {
         rowString = ""
         for j := 0; j < 3; j++ {
-            number = uint8(3 * i + j + 1)
+            number = uint8(3*i + j + 1)
             if len(rowString) > 0 {
                 rowString += " "
             }
@@ -226,19 +346,19 @@ func getBoxString(boxId int, m model, font asciiFont, height int, width int) str
     var cellStyle lipgloss.Style
     var rowString string
     var rowStrings []string
-    for i := boxRowStart; i < boxRowStart + 3; i++ {
+    for i := boxRowStart; i < boxRowStart+3; i++ {
         rowString = ""
-        for j := boxColStart; j < boxColStart + 3; j++ {
+        for j := boxColStart; j < boxColStart+3; j++ {
             cellString = getCellString(m.game,
-                                       i,
-                                       j,
-                                       font,
-                                       height,
-                                       width)
+                i,
+                j,
+                font,
+                height,
+                width)
             cellStyle = getCellStyle(m, i, j).SetString(cellString)
             rowString = lipgloss.JoinHorizontal(lipgloss.Top,
-                                                rowString,
-                                                cellStyle.String())
+                rowString,
+                cellStyle.String())
         }
         rowStrings = append(rowStrings, rowString)
     }
@@ -248,26 +368,26 @@ func getBoxString(boxId int, m model, font asciiFont, height int, width int) str
 
 func getNumberFromShiftedDigit(digit string) int {
     switch digit {
-        case "!":
-            return 1
-        case "@":
-            return 2
-        case "#":
-            return 3
-        case "$":
-            return 4
-        case "%":
-            return 5
-        case "^":
-            return 6
-        case "&":
-            return 7
-        case "*":
-            return 8
-        case "(":
-            return 9
-        default:
-            return 0
+    case "!":
+        return 1
+    case "@":
+        return 2
+    case "#":
+        return 3
+    case "$":
+        return 4
+    case "%":
+        return 5
+    case "^":
+        return 6
+    case "&":
+        return 7
+    case "*":
+        return 8
+    case "(":
+        return 9
+    default:
+        return 0
     }
 }
 
