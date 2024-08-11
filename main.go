@@ -350,6 +350,28 @@ func selectRandomCandidate(candidates []uint8) (uint8, error) {
     return candidates[rand.IntN(len(candidates))], nil
 }
 
+func computeCandidates(game *Sudoku) {
+    game.candidates = [9][9][9]bool{}
+    for i := 0; i < 9; i++ {
+        for j := 0; j < 9; j++ {
+            for k := 0; k < 9; k++ {
+                game.candidates[i][j][k] = true
+            }
+        }
+    }
+    for i := 0; i < 9; i++ {
+        for j := 0; j < 9; j++ {
+            if game.board[i][j] != 0 {
+                updateCandidates(i, j, game.board[i][j], game, false)
+            }
+        }
+    }
+}
+
+func toggleCandidate(row int, col int, candidate int, game *Sudoku) {
+    game.candidates[row][col][candidate - 1] = !game.candidates[row][col][candidate - 1]
+}
+
 func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, game *Sudoku, setTo bool) {
     for i := 0; i < 9; i++ {
         game.candidates[changedRow][i][insertedValue - 1] = setTo
@@ -361,6 +383,10 @@ func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, ga
             game.candidates[i][j][insertedValue - 1] = setTo
         }
     }
+}
+
+func wipeCandidates(game *Sudoku) {
+    game.candidates = [9][9][9]bool{}
 }
 
 func runPrint() {

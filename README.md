@@ -79,6 +79,4 @@ Solution:
 - Improve the TUI
     - Add a help screen with the keybindings
     - If the puzzle is solved display a prompt to start a new puzzle or quit
-    - Maybe find a way to add pencil marks?
-        - Could enlarge everything and make actual numbers larger ASCII art
 - Integrate with a simple web server to play Sudoku in the browser
