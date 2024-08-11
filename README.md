@@ -1,6 +1,6 @@
 # Sudoku Generator and Solver in Go
 
-Toy project to learn Go. Generates and solves Sudoku puzzles.
+Toy project to learn Go. Generates and solves Sudoku puzzles and provides a simple TUI to play them.
 
 Unlike most Sudoku generators I found, this one does not start with a solved puzzle and removes numbers.
 Instead, it starts with an empty grid and fills it with random numbers. I did not like the idea of having
@@ -26,6 +26,10 @@ sugoku [--print]
 
 When the `--print` flag is set, the program simply prints a generated Sudoku and its solution.
 Otherwise, you are presented with a TUI to solve a randomly generated Sudoku puzzle.
+
+Example screenshot of the TUI:
+
+![](/images/tui.png)
 
 Example output of `sugoku --print`:
 
