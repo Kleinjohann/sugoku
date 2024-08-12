@@ -17,6 +17,7 @@ type model struct {
     cursor   [2]int
     keys     keyMap
     help     help.Model
+    tips     string
     width    int
 }
 
@@ -34,6 +35,7 @@ type keyMap struct {
     Delete            key.Binding
     ComputeCandidates key.Binding
     WipeCandidates    key.Binding
+    ToggleTips        key.Binding
     NewGame           key.Binding
     Quit              key.Binding
 }
@@ -91,6 +93,10 @@ var keys = keyMap{
         key.WithKeys("C"),
         key.WithHelp("C", "wipe all pencil marks"),
     ),
+    ToggleTips: key.NewBinding(
+        key.WithKeys("t"),
+        key.WithHelp("t", "toggle tips"),
+    ),
     NewGame: key.NewBinding(
         key.WithKeys("n"),
         key.WithHelp("n", "new game"),
@@ -111,7 +117,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
          k.Up3, k.Down3, k.Left3, k.Right3,
          k.Number, k.Candidate, k.Delete,
          k.ComputeCandidates, k.WipeCandidates,
-         k.NewGame, k.Quit},
+         k.ToggleTips, k.NewGame, k.Quit},
     }
 }
 
@@ -216,6 +222,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         case key.Matches(msg, keys.WipeCandidates):
             wipeCandidates(&m.game)
+
+        case key.Matches(msg, keys.ToggleTips):
+            toggleTips(&m)
         }
     }
 
@@ -246,12 +255,19 @@ func (m model) View() string {
 
     if isValidSolvedBoard(m.game.board) {
         m.help.ShowAll = false
+        m.tips = ""
         winMessage := lipgloss.NewStyle().Foreground(completedNumberForeground).Render("You won!")
         renderedTable = lipgloss.Place(tableWidth, tableHeight, lipgloss.Center, lipgloss.Center, winMessage)
     }
 
     m.help.Width = m.width - tableWidth - 1
     helpView := m.help.View(m.keys)
+
+    if len(m.tips) > 0 {
+        updateTipsString(&m)
+    }
+
+    helpView = lipgloss.JoinVertical(lipgloss.Left, helpView, "\n", m.tips)
 
     return lipgloss.JoinHorizontal(lipgloss.Top,
         renderedTable,
@@ -395,6 +411,27 @@ func getNumberFromShiftedDigit(digit string) int {
         return 9
     default:
         return 0
+    }
+}
+
+func updateTipsString(m *model) {
+    game := copySudoku(m.game)
+    computeCandidates(&game)
+    m.tips = "Available hints:\n"
+    for strategy := range solveStrategies {
+        steps := solveStrategies[strategy](&game)
+        for step := range steps {
+            m.tips += fmt.Sprintf("%s: %s\n", steps[step].strategy, steps[step].description)
+        }
+    }
+}
+
+func toggleTips(m *model) {
+    switch len(m.tips) {
+    case 0:
+        updateTipsString(m)
+    default:
+        m.tips = ""
     }
 }
 
