@@ -123,7 +123,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 var cursorBackground = lipgloss.Color("3")
 var visibleFromCursorBackground = lipgloss.Color("18")
-var cursorNumberBackground = lipgloss.Color("8")
+var cursorNumberBackground = lipgloss.Color("6")
+var cursorNumberForeground = lipgloss.Color("7")
 var cursorCandidatesForeground = lipgloss.Color("0")
 var wrongNumberForeground = lipgloss.Color("1")
 var completedNumberForeground = lipgloss.Color("2")
@@ -286,18 +287,23 @@ func getCellStyle(m model, row int, col int) lipgloss.Style {
     if cellsSeeEachOther(row, col, cursorRow, cursorCol) {
         background = visibleFromCursorBackground
     }
-    if number != 0 && number == cursorNumber {
+    if number == 0 && cursorNumber != 0 && m.game.candidates[row][col][cursorNumber-1] {
         background = cursorNumberBackground
+        foreground = cursorCandidatesForeground
     }
     if cursorRow == row && cursorCol == col {
         background = cursorBackground
         foreground = cursorCandidatesForeground
     }
-    if !m.editable[row][col] {
-        foreground = uneditableForeground
-    }
     if number > 0 && m.editable[row][col] {
         foreground = editableForeground
+    }
+    if number != 0 && number == cursorNumber && (row != cursorRow || col != cursorCol){
+        background = cursorNumberBackground
+        foreground = cursorNumberForeground
+    }
+    if !m.editable[row][col] {
+        foreground = uneditableForeground
     }
     if numberIsComplete(m.game, number) {
         foreground = completedNumberForeground
