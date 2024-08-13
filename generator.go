@@ -122,6 +122,9 @@ func generateSudoku() Sudoku {
             if !isValidSolvedBoard(game.solution) {
                 panic("Invalid Solution")
             }
+            if solvableUsingStrategies(&game, solveStrategies) {
+                return generateSudoku()
+            }
             return game
         } else if numSolutions == 0 {
             isRetry = true

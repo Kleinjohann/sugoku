@@ -168,3 +168,23 @@ var solveStrategies = []SolveStrategy{
     // swordfish,
     // yWing,
 }
+
+func solvableUsingStrategies(game *Sudoku, strategies []SolveStrategy) bool {
+    gameCopy := *game
+    var steps []SolutionStep
+    for !isSolved(gameCopy.board) {
+        for _, strategy := range strategies {
+            steps = strategy(&gameCopy)
+            if len(steps) > 0 {
+                break
+            }
+        }
+        if len(steps) == 0 {
+            return false
+        }
+        for _, step := range steps {
+            step.Apply(&gameCopy)
+        }
+    }
+    return true
+}
