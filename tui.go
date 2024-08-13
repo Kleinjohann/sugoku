@@ -17,6 +17,7 @@ type model struct {
     cursor   [2]int
     keys     keyMap
     help     help.Model
+    strategies []SolutionStep
     tips     string
     width    int
 }
@@ -36,6 +37,7 @@ type keyMap struct {
     ComputeCandidates key.Binding
     WipeCandidates    key.Binding
     ToggleTips        key.Binding
+    ApplyTips         key.Binding
     NewGame           key.Binding
     Quit              key.Binding
 }
@@ -96,6 +98,10 @@ var keys = keyMap{
     ToggleTips: key.NewBinding(
         key.WithKeys("t"),
         key.WithHelp("t", "toggle tips"),
+    ),
+    ApplyTips: key.NewBinding(
+        key.WithKeys("T"),
+        key.WithHelp("T", "apply tips"),
     ),
     NewGame: key.NewBinding(
         key.WithKeys("n"),
@@ -226,6 +232,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         case key.Matches(msg, keys.ToggleTips):
             toggleTips(&m)
+
+        case key.Matches(msg, keys.ApplyTips):
+            applyTips(&m)
         }
     }
 
@@ -421,15 +430,32 @@ func getNumberFromShiftedDigit(digit string) int {
 }
 
 func updateTipsString(m *model) {
+    if !isValidBoard(m.game.board) {
+        m.tips = "You made a mistake!"
+        return
+    }
     game := copySudoku(m.game)
     computeCandidates(&game)
-    m.tips = "Available hints:\n"
     for strategy := range solveStrategies {
         steps := solveStrategies[strategy](&game)
-        for step := range steps {
-            m.tips += fmt.Sprintf("%s: %s\n", steps[step].strategy, steps[step].description)
+        if len(steps) > 0 {
+            m.strategies = steps
+            m.tips = steps[0].strategy + ":\n"
+            for step := range steps {
+                m.tips += fmt.Sprintf("%s\n", steps[step].description)
+            }
+            m.tips += "\nPress 'T' to apply all tips"
+            return
         }
     }
+    m.tips = "No hints available"
+}
+
+func applyTips(m *model) {
+    for _, step := range m.strategies {
+        step.Apply(&m.game)
+    }
+    updateTipsString(m)
 }
 
 func toggleTips(m *model) {
