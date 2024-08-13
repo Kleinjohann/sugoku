@@ -434,7 +434,7 @@ func updateTipsString(m *model) {
         m.tips = "You made a mistake!"
         return
     }
-    game := copySudoku(m.game)
+    game := m.game
     computeCandidates(&game)
     for strategy := range solveStrategies {
         steps := solveStrategies[strategy](&game)

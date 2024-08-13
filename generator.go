@@ -9,32 +9,20 @@ type Sudoku struct {
     board [9][9]uint8
     solution [9][9]uint8
     candidates [9][9][9]bool
+    candidatesCount [9][9]int
 }
 
 func makeEmptySudoku() Sudoku {
     var game Sudoku
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
-            game.board[i][j] = 0
+            game.candidatesCount[i][j] = 9
             for k := 0; k < 9; k++ {
                 game.candidates[i][j][k] = true
             }
         }
     }
     return game
-}
-
-func copySudoku(game Sudoku) Sudoku {
-    var newGame Sudoku
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
-            newGame.board[i][j] = game.board[i][j]
-            for k := 0; k < 9; k++ {
-                newGame.candidates[i][j][k] = game.candidates[i][j][k]
-            }
-        }
-    }
-    return newGame
 }
 
 func isValidSet(set []uint8) bool {
@@ -91,7 +79,7 @@ func fillRandomCell(game *Sudoku) {
         fillRandomCell(game)
     }
     game.board[row][col] = insertedValue
-    updateCandidates(row, col, insertedValue, game, false)
+    updateCandidates(row, col, insertedValue, game)
 }
 
 func generateSudoku() Sudoku {
@@ -103,7 +91,7 @@ func generateSudoku() Sudoku {
     // fill in 5 random cells according to the sudoku rules without checking for number of solutions
     // I'm pretty sure there cannot be a board with <5 filled cells that has 0 solutions
     for i := 0; i < 5; i++ {
-        previousGame = copySudoku(game)
+        previousGame = game
         fillRandomCell(&game)
     }
     // now start checking for number of solutions
@@ -128,9 +116,9 @@ func generateSudoku() Sudoku {
             return game
         } else if numSolutions == 0 {
             isRetry = true
-            game = copySudoku(previousGame)
+            game = previousGame
         } else {
-            previousGame = copySudoku(game)
+            previousGame = game
             previousNumSolutions = numSolutions
             fillRandomCell(&game)
             isRetry = false
@@ -139,7 +127,7 @@ func generateSudoku() Sudoku {
 }
 
 func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
-    currentGame := copySudoku(game)
+    currentGame := game
     var candidates []uint8
     var err error
     var previousGame Sudoku
@@ -154,9 +142,9 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
                 candidates = getCandidates(&currentGame, row, col)
                 currentNumSolutions = 0
                 for _, candidate := range candidates {
-                    previousGame = copySudoku(currentGame)
+                    previousGame = currentGame
                     currentGame.board[row][col] = candidate
-                    updateCandidates(row, col, candidate, &currentGame, false)
+                    updateCandidates(row, col, candidate, &currentGame)
                     currentSolution, err = solveSudoku(currentGame)
                     if err == nil {
                         currentNumSolutions++
@@ -168,7 +156,7 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
                             lastSolution = currentSolution
                         }
                     }
-                    currentGame = copySudoku(previousGame)
+                    currentGame = previousGame
                 }
                 if currentNumSolutions == 0 {
                     return 0, currentSolution
@@ -188,15 +176,12 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
 }
 
 func solveSudoku(game Sudoku) ([9][9]uint8, error) {
-    currentGame := copySudoku(game)
+    currentGame := game
     var row, col int
     var candidates []uint8
     var previousGame Sudoku
 
     if isSolved(currentGame.board) {
-        if !isValidSolvedBoard(game.board) {
-            panic("Solution found, but invalid")
-        }
         return currentGame.board, nil
     }
 
@@ -206,14 +191,14 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
         return currentGame.board, fmt.Errorf("No candidates available")
     }
     for _, candidate := range candidates {
-        previousGame = copySudoku(currentGame)
+        previousGame = currentGame
         currentGame.board[row][col] = candidate
-        updateCandidates(row, col, candidate, &currentGame, false)
+        updateCandidates(row, col, candidate, &currentGame)
         solution, err := solveSudoku(currentGame)
         if err == nil{
             return solution, nil
         }
-        game = copySudoku(previousGame)
+        game = previousGame
     }
 
     return currentGame.board, fmt.Errorf("No solution found")
@@ -253,13 +238,13 @@ func getCandidates(game *Sudoku, row int, col int) []uint8 {
 
 func getMostConstrainedCell(game *Sudoku) (int, int) {
     minCandidates := 10
-    var row, col int
+    var row, col, candidateCount int
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
             if game.board[i][j] == 0 {
-                candidates := getCandidates(game, i, j)
-                if len(candidates) < minCandidates {
-                    minCandidates = len(candidates)
+                candidateCount = game.candidatesCount[i][j]
+                if candidateCount < minCandidates {
+                    minCandidates = candidateCount
                     row = i
                     col = j
                 }
@@ -316,7 +301,7 @@ func computeCandidates(game *Sudoku) {
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
             if game.board[i][j] != 0 {
-                updateCandidates(i, j, game.board[i][j], game, false)
+                updateCandidates(i, j, game.board[i][j], game)
             }
         }
     }
@@ -326,15 +311,24 @@ func toggleCandidate(row int, col int, candidate int, game *Sudoku) {
     game.candidates[row][col][candidate - 1] = !game.candidates[row][col][candidate - 1]
 }
 
-func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, game *Sudoku, setTo bool) {
+func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, game *Sudoku) {
     for i := 0; i < 9; i++ {
-        game.candidates[changedRow][i][insertedValue - 1] = setTo
-        game.candidates[i][changedColumn][insertedValue - 1] = setTo
+        if game.candidates[changedRow][i][insertedValue - 1] {
+            game.candidates[changedRow][i][insertedValue - 1] = false
+            game.candidatesCount[changedRow][i]--
+        }
+        if game.candidates[i][changedColumn][insertedValue - 1] {
+            game.candidates[i][changedColumn][insertedValue - 1] = false
+            game.candidatesCount[i][changedColumn]--
+        }
     }
     boxRowStart, boxColumnStart := getBoxStartsFromCell(changedRow, changedColumn)
     for i := boxRowStart; i < boxRowStart + 3; i++ {
         for j := boxColumnStart; j < boxColumnStart + 3; j++ {
-            game.candidates[i][j][insertedValue - 1] = setTo
+            if game.candidates[i][j][insertedValue - 1] {
+                game.candidates[i][j][insertedValue - 1] = false
+                game.candidatesCount[i][j]--
+            }
         }
     }
 }

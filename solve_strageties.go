@@ -64,11 +64,12 @@ func (step SolutionStep) Apply(game *Sudoku) {
     case PlaceNumber:
         for i, cell := range step.targetCells {
             game.board[cell[0]][cell[1]] = step.targetValues[i]
-            updateCandidates(cell[0], cell[1], step.targetValues[i], game, false)
+            updateCandidates(cell[0], cell[1], step.targetValues[i], game)
         }
     case RemoveCandidate:
         for i, cell := range step.targetCells {
             game.candidates[cell[0]][cell[1]][step.targetValues[i]-1] = false
+            game.candidatesCount[cell[0]][cell[1]]--
         }
     }
 }

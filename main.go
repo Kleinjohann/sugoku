@@ -3,6 +3,9 @@ package main
 import (
     "flag"
     "fmt"
+    "log"
+    "os"
+    "runtime/pprof"
     "strings"
 )
 
@@ -63,14 +66,27 @@ func runPrint() {
 
 func main() {
     var (
+        cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
         print = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
     )
     flag.Usage = func() {
         fmt.Fprintf(flag.CommandLine.Output(),
-            "Usage: sugoku [-print]\n")
+            "Usage: sugoku [-print] [-cpuprofile]\n")
         flag.PrintDefaults()
     }
     flag.Parse()
+
+    if *cpuprofile != "" {
+        f, err := os.Create(*cpuprofile)
+        if err != nil {
+            log.Fatal("could not create CPU profile: ", err)
+        }
+        defer f.Close()
+        if err := pprof.StartCPUProfile(f); err != nil {
+            log.Fatal("could not start CPU profile: ", err)
+        }
+        defer pprof.StopCPUProfile()
+    }
 
     if *print {
         runPrint()
