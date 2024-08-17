@@ -324,6 +324,7 @@ func computeCandidates(game *Sudoku) {
     game.candidates = [9][9][9]bool{}
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
+            game.candidatesCount[i][j] = 9
             for k := 0; k < 9; k++ {
                 game.candidates[i][j][k] = true
             }
