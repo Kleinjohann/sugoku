@@ -82,20 +82,18 @@ func nakedSingle(game *Sudoku) []SolutionStep {
     var description string
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
-            if game.board[i][j] == 0 {
+            if game.board[i][j] == 0 && game.candidatesCount[i][j] == 1 {
                 candidates = getCandidates(game, i, j)
-                if len(candidates) == 1 {
-                    description = fmt.Sprintf("r%dc%d can only be %d", i+1, j+1, candidates[0])
-                    steps = append(steps, SolutionStep{
-                        strategy:      "Naked Single",
-                        description:   description,
-                        sourceContext: Cell,
-                        sourceIndices: []int{9*i + j},
-                        targetCells:   [][]int{{i, j}},
-                        targetValues:  []uint8{candidates[0]},
-                        effectType:    PlaceNumber,
-                    })
-                }
+                description = fmt.Sprintf("r%dc%d can only be %d", i+1, j+1, candidates[0])
+                steps = append(steps, SolutionStep{
+                    strategy:      "Naked Single",
+                    description:   description,
+                    sourceContext: Cell,
+                    sourceIndices: []int{9*i + j},
+                    targetCells:   [][]int{{i, j}},
+                    targetValues:  []uint8{candidates[0]},
+                    effectType:    PlaceNumber,
+                })
             }
         }
     }
