@@ -13,7 +13,7 @@ func printBoard(board [9][9]uint8) {
     leftPad := "   "
     hPad := " "
     vPad := "\n"
-    cellWidth := 3 * (2 + 2 * len(hPad)) - 1
+    cellWidth := 3*(2+2*len(hPad)) - 1
     builder := new(strings.Builder)
     builder.WriteString(leftPad + "|")
     builder.WriteString(strings.Repeat("-", cellWidth))
@@ -26,7 +26,7 @@ func printBoard(board [9][9]uint8) {
         for j := 0; j < 9; j++ {
             if j == 0 {
                 builder.WriteString(leftPad + "|" + hPad)
-            } else if j % 3 == 0 && j != 0 {
+            } else if j%3 == 0 && j != 0 {
                 builder.WriteString(hPad + "|" + hPad)
             } else {
                 builder.WriteString(strings.Repeat(hPad, 2) + " ")
@@ -38,7 +38,7 @@ func printBoard(board [9][9]uint8) {
             }
         }
         builder.WriteString(hPad + "|" + vPad + leftPad + "|")
-        if i % 3 == 2 {
+        if i%3 == 2 {
             builder.WriteString(strings.Repeat("-", cellWidth))
             builder.WriteString("|")
             builder.WriteString(strings.Repeat("-", cellWidth))
@@ -56,8 +56,8 @@ func printBoard(board [9][9]uint8) {
     fmt.Println(builder.String())
 }
 
-func runPrint() {
-    sudoku := generateSudoku()
+func runPrint(seed int, cores int) {
+    sudoku := generateSudokuParallel(seed, cores)
     println("Generated Sudoku:")
     printBoard(sudoku.board)
     println("Solution:")
@@ -67,7 +67,9 @@ func runPrint() {
 func main() {
     var (
         cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
-        print = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
+        print      = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
+        seed       = flag.Int("seed", -1, "seed for random number generator, -1 for random seed")
+        cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
     )
     flag.Usage = func() {
         fmt.Fprintf(flag.CommandLine.Output(),
@@ -89,8 +91,8 @@ func main() {
     }
 
     if *print {
-        runPrint()
+        runPrint(*seed, *cores)
     } else {
-        runTui()
+        runTui(*seed, *cores)
     }
 }

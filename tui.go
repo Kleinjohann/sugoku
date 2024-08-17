@@ -12,14 +12,15 @@ import (
 )
 
 type model struct {
-    game     Sudoku
-    editable [9][9]bool
-    cursor   [2]int
-    keys     keyMap
-    help     help.Model
+    game       Sudoku
+    editable   [9][9]bool
+    cursor     [2]int
+    keys       keyMap
+    help       help.Model
     strategies []SolutionStep
-    tips     string
-    width    int
+    tips       string
+    width      int
+    cores      int
 }
 
 type keyMap struct {
@@ -120,10 +121,10 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
     return [][]key.Binding{
         {k.Up, k.Down, k.Left, k.Right,
-         k.Up3, k.Down3, k.Left3, k.Right3,
-         k.Number, k.Candidate, k.Delete,
-         k.ComputeCandidates, k.WipeCandidates,
-         k.ToggleTips, k.NewGame, k.Quit},
+            k.Up3, k.Down3, k.Left3, k.Right3,
+            k.Number, k.Candidate, k.Delete,
+            k.ComputeCandidates, k.WipeCandidates,
+            k.ToggleTips, k.NewGame, k.Quit},
     }
 }
 
@@ -137,8 +138,8 @@ var completedNumberForeground = lipgloss.Color("2")
 var editableForeground = lipgloss.Color("4")
 var uneditableForeground = lipgloss.Color("15")
 
-func initialModel() model {
-    game := generateSudoku()
+func initialModel(seed int, cores int) model {
+    game := generateSudokuParallel(seed, cores)
     editable := [9][9]bool{}
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
@@ -154,6 +155,7 @@ func initialModel() model {
         cursor:   [2]int{4, 4},
         keys:     keys,
         help:     help.New(),
+        cores:    cores,
     }
     m.help.ShowAll = true
     return m
@@ -178,7 +180,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             return m, tea.Quit
 
         case key.Matches(msg, keys.NewGame):
-            return initialModel(), nil
+            return initialModel(-1, m.cores), nil
 
         case key.Matches(msg, keys.Up):
             m.cursor[0] = (m.cursor[0] - 1 + 9) % 9
@@ -307,7 +309,7 @@ func getCellStyle(m model, row int, col int) lipgloss.Style {
     if number > 0 && m.editable[row][col] {
         foreground = editableForeground
     }
-    if number != 0 && number == cursorNumber && (row != cursorRow || col != cursorCol){
+    if number != 0 && number == cursorNumber && (row != cursorRow || col != cursorCol) {
         background = cursorNumberBackground
         foreground = cursorNumberForeground
     }
@@ -467,8 +469,8 @@ func toggleTips(m *model) {
     }
 }
 
-func runTui() {
-    p := tea.NewProgram(initialModel())
+func runTui(seed int, cores int) {
+    p := tea.NewProgram(initialModel(seed, cores))
     if _, err := p.Run(); err != nil {
         fmt.Printf("Error: %v", err)
         os.Exit(1)

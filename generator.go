@@ -3,12 +3,13 @@ package main
 import (
     "fmt"
     "math/rand/v2"
+    "runtime"
 )
 
 type Sudoku struct {
-    board [9][9]uint8
-    solution [9][9]uint8
-    candidates [9][9][9]bool
+    board           [9][9]uint8
+    solution        [9][9]uint8
+    candidates      [9][9][9]bool
     candidatesCount [9][9]int
 }
 
@@ -49,14 +50,14 @@ func isValidBoard(board [9][9]uint8) bool {
 
         for j := 0; j < 9; j++ {
             column[j] = board[j][i]
-            box[j] = board[boxRowStart + j / 3][boxColumnStart + j % 3]
+            box[j] = board[boxRowStart+j/3][boxColumnStart+j%3]
         }
 
         isValidRow := isValidSet(row)
         isValidColumn := isValidSet(column)
         isValidBox := isValidSet(box)
 
-        if (!isValidRow || !isValidColumn || !isValidBox) {
+        if !isValidRow || !isValidColumn || !isValidBox {
             return false
         }
     }
@@ -71,18 +72,42 @@ func isValidUnsolvedBoard(board [9][9]uint8) bool {
     return (isValidBoard(board) && !isSolved(board))
 }
 
-func fillRandomCell(game *Sudoku) {
-    row, col := getRandomEmptyCell(game.board)
+func fillRandomCell(game *Sudoku, rng *rand.Rand) {
+    row, col := getRandomEmptyCell(game.board, rng)
     candidates := getCandidates(game, row, col)
-    insertedValue, err := selectRandomCandidate(candidates)
+    insertedValue, err := selectRandomCandidate(candidates, rng)
     if err != nil {
-        fillRandomCell(game)
+        fillRandomCell(game, rng)
     }
     game.board[row][col] = insertedValue
     updateCandidates(row, col, insertedValue, game)
 }
 
-func generateSudoku() Sudoku {
+func generateSudokuParallel(seed int, num_workers int) Sudoku {
+    if seed == -1 {
+        seed = rand.Int()
+    } else {
+        // avoid seed 0
+        seed++
+    }
+    quit := make(chan bool)
+    result := make(chan Sudoku)
+    if num_workers == -1 {
+        num_workers = runtime.NumCPU()
+    }
+    for i := 1; i <= num_workers; i++ {
+        go generateSudoku(seed*i, quit, result)
+    }
+    game := <-result
+    select {
+    case quit <- true:
+    default:
+    }
+    return game
+}
+
+func generateSudoku(seed int, quit chan bool, result chan Sudoku) {
+    rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)))
     game := makeEmptySudoku()
     var currentSolution [9][9]uint8
     var numSolutions int
@@ -92,7 +117,7 @@ func generateSudoku() Sudoku {
     // I'm pretty sure there cannot be a board with <5 filled cells that has 0 solutions
     for i := 0; i < 5; i++ {
         previousGame = game
-        fillRandomCell(&game)
+        fillRandomCell(&game, rng)
     }
     // now start checking for number of solutions
     isRetry := false
@@ -103,6 +128,11 @@ func generateSudoku() Sudoku {
             numSolutions, currentSolution = getNumSolutions(game)
         }
         if numSolutions == 1 {
+            select {
+            case <-quit:
+                return
+            default:
+            }
             if !isValidUnsolvedBoard(game.board) {
                 panic("Invalid Sudoku")
             }
@@ -111,16 +141,17 @@ func generateSudoku() Sudoku {
                 panic("Invalid Solution")
             }
             if solvableUsingStrategies(&game, solveStrategies) {
-                return generateSudoku()
+                generateSudoku(seed+rng.Int(), quit, result)
             }
-            return game
+            result <- game
+            return
         } else if numSolutions == 0 {
             isRetry = true
             game = previousGame
         } else {
             previousGame = game
             previousNumSolutions = numSolutions
-            fillRandomCell(&game)
+            fillRandomCell(&game, rng)
             isRetry = false
         }
     }
@@ -186,16 +217,16 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
     }
 
     row, col = getMostConstrainedCell(&currentGame)
-    candidates = getCandidates(&currentGame, row, col)
-    if len(candidates) == 0 {
+    if currentGame.candidatesCount[row][col] == 0 {
         return currentGame.board, fmt.Errorf("No candidates available")
     }
+    candidates = getCandidates(&currentGame, row, col)
     for _, candidate := range candidates {
         previousGame = currentGame
         currentGame.board[row][col] = candidate
         updateCandidates(row, col, candidate, &currentGame)
         solution, err := solveSudoku(currentGame)
-        if err == nil{
+        if err == nil {
             return solution, nil
         }
         game = previousGame
@@ -222,14 +253,14 @@ func getBoxStartsFromBoxId(boxId int) (int, int) {
 }
 
 func getBoxStartsFromCell(row int, col int) (int, int) {
-    boxId := (row / 3) * 3 + (col / 3)
+    boxId := (row/3)*3 + (col / 3)
     return getBoxStartsFromBoxId(boxId)
 }
 
 func getCandidates(game *Sudoku, row int, col int) []uint8 {
     candidates := make([]uint8, 0)
     for i := 1; i < 10; i++ {
-        if game.candidates[row][col][i - 1] {
+        if game.candidates[row][col][i-1] {
             candidates = append(candidates, uint8(i))
         }
     }
@@ -254,10 +285,10 @@ func getMostConstrainedCell(game *Sudoku) (int, int) {
     return row, col
 }
 
-func getRandomEmptyCell(board [9][9]uint8) (int, int) {
+func getRandomEmptyCell(board [9][9]uint8, rng *rand.Rand) (int, int) {
     for {
-        row := rand.IntN(9)
-        col := rand.IntN(9)
+        row := rng.IntN(9)
+        col := rng.IntN(9)
         if board[row][col] == 0 {
             return row, col
         }
@@ -265,7 +296,7 @@ func getRandomEmptyCell(board [9][9]uint8) (int, int) {
 }
 
 func cellsSeeEachOther(row1 int, col1 int, row2 int, col2 int) bool {
-    return (row1 == row2 || col1 == col2 || (row1 / 3 == row2 / 3 && col1 / 3 == col2 / 3))
+    return (row1 == row2 || col1 == col2 || (row1/3 == row2/3 && col1/3 == col2/3))
 }
 
 func numberIsComplete(game Sudoku, number uint8) bool {
@@ -282,11 +313,11 @@ func numberIsComplete(game Sudoku, number uint8) bool {
     return true
 }
 
-func selectRandomCandidate(candidates []uint8) (uint8, error) {
+func selectRandomCandidate(candidates []uint8, rng *rand.Rand) (uint8, error) {
     if len(candidates) == 0 {
         return 0, fmt.Errorf("No candidates available")
     }
-    return candidates[rand.IntN(len(candidates))], nil
+    return candidates[rng.IntN(len(candidates))], nil
 }
 
 func computeCandidates(game *Sudoku) {
@@ -308,25 +339,25 @@ func computeCandidates(game *Sudoku) {
 }
 
 func toggleCandidate(row int, col int, candidate int, game *Sudoku) {
-    game.candidates[row][col][candidate - 1] = !game.candidates[row][col][candidate - 1]
+    game.candidates[row][col][candidate-1] = !game.candidates[row][col][candidate-1]
 }
 
 func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, game *Sudoku) {
     for i := 0; i < 9; i++ {
-        if game.candidates[changedRow][i][insertedValue - 1] {
-            game.candidates[changedRow][i][insertedValue - 1] = false
+        if game.candidates[changedRow][i][insertedValue-1] {
+            game.candidates[changedRow][i][insertedValue-1] = false
             game.candidatesCount[changedRow][i]--
         }
-        if game.candidates[i][changedColumn][insertedValue - 1] {
-            game.candidates[i][changedColumn][insertedValue - 1] = false
+        if game.candidates[i][changedColumn][insertedValue-1] {
+            game.candidates[i][changedColumn][insertedValue-1] = false
             game.candidatesCount[i][changedColumn]--
         }
     }
     boxRowStart, boxColumnStart := getBoxStartsFromCell(changedRow, changedColumn)
-    for i := boxRowStart; i < boxRowStart + 3; i++ {
-        for j := boxColumnStart; j < boxColumnStart + 3; j++ {
-            if game.candidates[i][j][insertedValue - 1] {
-                game.candidates[i][j][insertedValue - 1] = false
+    for i := boxRowStart; i < boxRowStart+3; i++ {
+        for j := boxColumnStart; j < boxColumnStart+3; j++ {
+            if game.candidates[i][j][insertedValue-1] {
+                game.candidates[i][j][insertedValue-1] = false
                 game.candidatesCount[i][j]--
             }
         }
@@ -336,4 +367,3 @@ func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, ga
 func wipeCandidates(game *Sudoku) {
     game.candidates = [9][9][9]bool{}
 }
-

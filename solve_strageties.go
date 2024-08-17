@@ -127,18 +127,18 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
 
                     for _, step := range steps {
                         // avoid steps with duplicate effects
-                        if (step.targetCells[0][0] == row &&
+                        if step.targetCells[0][0] == row &&
                             step.targetCells[0][1] == col &&
-                            step.targetValues[0] == number) {
+                            step.targetValues[0] == number {
                             continue candidateLoop
                         }
                     }
                     description = fmt.Sprintf("%d can only go in r%dc%d in %s %d",
-                                              number,
-                                              row+1,
-                                              col+1,
-                                              contextStr,
-                                              contextIdx+1)
+                        number,
+                        row+1,
+                        col+1,
+                        contextStr,
+                        contextIdx+1)
                     steps = append(steps, SolutionStep{
                         strategy:      "Hidden Single",
                         description:   description,
