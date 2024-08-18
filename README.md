@@ -86,4 +86,5 @@ Solution:
     - Puzzle difficulty is then determined by number and difficulty of required strategies
 - Improve the TUI
     - Allow selection of multiple cells to enter multiple candidates at once
+    - Improve keymap and hint formatting for narrow terminal windows
 - Integrate with a simple web server to play Sudoku in the browser

@@ -13,6 +13,7 @@ import (
 
 type model struct {
     game       Sudoku
+    tipsGame   Sudoku
     editable   [9][9]bool
     cursor     [2]int
     keys       keyMap
@@ -148,9 +149,11 @@ func initialModel(seed int, cores int) model {
             }
         }
     }
+    tipsGame := game
     game.candidates = [9][9][9]bool{}
     m := model{
         game:     game,
+        tipsGame: tipsGame,
         editable: editable,
         cursor:   [2]int{4, 4},
         keys:     keys,
@@ -208,7 +211,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
         case key.Matches(msg, keys.Number):
             if m.editable[m.cursor[0]][m.cursor[1]] {
-                m.game.board[m.cursor[0]][m.cursor[1]] = uint8(msg.String()[0] - '0')
+                number := uint8(msg.String()[0] - '0')
+                m.game.board[m.cursor[0]][m.cursor[1]] = number
+                if m.game.solution[m.cursor[0]][m.cursor[1]] == number {
+                    m.tipsGame.board[m.cursor[0]][m.cursor[1]] = number
+                    computeCandidates(&m.tipsGame)
+                }
             }
 
         case key.Matches(msg, keys.Candidate):
@@ -227,7 +235,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             }
 
         case key.Matches(msg, keys.ComputeCandidates):
-            computeCandidates(&m.game)
+            m.game.candidates = m.tipsGame.candidates
 
         case key.Matches(msg, keys.WipeCandidates):
             wipeCandidates(&m.game)
@@ -436,10 +444,8 @@ func updateTipsString(m *model) {
         m.tips = "You made a mistake!"
         return
     }
-    game := m.game
-    computeCandidates(&game)
     for strategy := range solveStrategies {
-        steps := solveStrategies[strategy](&game)
+        steps := solveStrategies[strategy](&m.tipsGame)
         if len(steps) > 0 {
             m.strategies = steps
             m.tips = steps[0].strategy + ":\n"
@@ -455,8 +461,10 @@ func updateTipsString(m *model) {
 
 func applyTips(m *model) {
     for _, step := range m.strategies {
+        step.Apply(&m.tipsGame)
         step.Apply(&m.game)
     }
+    m.strategies = []SolutionStep{}
     updateTipsString(m)
 }
 
