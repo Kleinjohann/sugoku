@@ -142,7 +142,14 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
                 if currentDifficulty != difficulty {
                     generateSudoku(difficulty, seed+rng.Int(), quit, result)
                 }
-                result <- game
+                // for easy difficulties there can be a race condition,
+                // so we need another select statement here
+                select {
+                case <-quit:
+                    return
+                default:
+                    result <- game
+                }
                 return
             } else if numSolutions == 0 {
                 isRetry = true
