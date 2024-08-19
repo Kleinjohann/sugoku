@@ -96,7 +96,7 @@ func main() {
     if !slices.Contains(validDifficulties, *difficulty) {
         log.Fatal("difficulty must be between 0 and 3")
     } else if *difficulty == 0 {
-        *difficulty = validDifficulties[rand.IntN(len(validDifficulties))]
+        *difficulty = validDifficulties[rand.IntN(len(validDifficulties)-1)+1]
     }
 
     if *print {
