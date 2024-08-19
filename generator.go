@@ -83,7 +83,7 @@ func fillRandomCell(game *Sudoku, rng *rand.Rand) {
     updateCandidates(row, col, insertedValue, game)
 }
 
-func generateSudokuParallel(seed int, num_workers int) Sudoku {
+func generateSudokuParallel(difficulty int, seed int, num_workers int) Sudoku {
     if seed == -1 {
         seed = rand.Int()
     } else {
@@ -96,21 +96,20 @@ func generateSudokuParallel(seed int, num_workers int) Sudoku {
         num_workers = runtime.NumCPU()
     }
     for i := 1; i <= num_workers; i++ {
-        go generateSudoku(seed*i, quit, result)
+        go generateSudoku(difficulty, seed*i, quit, result)
     }
     game := <-result
-    select {
-    case quit <- true:
-    default:
+    for i := 1; i < num_workers; i++ {
+        quit <- true
     }
     return game
 }
 
-func generateSudoku(seed int, quit chan bool, result chan Sudoku) {
+func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku) {
     rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)))
     game := makeEmptySudoku()
     var currentSolution [9][9]uint8
-    var numSolutions int
+    var numSolutions, currentDifficulty int
     previousNumSolutions := 2
     var previousGame Sudoku
     // fill in 5 random cells according to the sudoku rules without checking for number of solutions
@@ -122,37 +121,38 @@ func generateSudoku(seed int, quit chan bool, result chan Sudoku) {
     // now start checking for number of solutions
     isRetry := false
     for {
-        if isRetry {
-            numSolutions = previousNumSolutions
-        } else {
-            numSolutions, currentSolution = getNumSolutions(game)
-        }
-        if numSolutions == 1 {
-            select {
-            case <-quit:
-                return
-            default:
-            }
-            if !isValidUnsolvedBoard(game.board) {
-                panic("Invalid Sudoku")
-            }
-            game.solution = currentSolution
-            if !isValidSolvedBoard(game.solution) {
-                panic("Invalid Solution")
-            }
-            if solvableUsingStrategies(&game, solveStrategies) {
-                generateSudoku(seed+rng.Int(), quit, result)
-            }
-            result <- game
+        select {
+        case <-quit:
             return
-        } else if numSolutions == 0 {
-            isRetry = true
-            game = previousGame
-        } else {
-            previousGame = game
-            previousNumSolutions = numSolutions
-            fillRandomCell(&game, rng)
-            isRetry = false
+        default:
+            if isRetry {
+                numSolutions = previousNumSolutions
+            } else {
+                numSolutions, currentSolution = getNumSolutions(game)
+            }
+            if numSolutions == 1 {
+                if !isValidUnsolvedBoard(game.board) {
+                    panic("Invalid Sudoku")
+                }
+                game.solution = currentSolution
+                if !isValidSolvedBoard(game.solution) {
+                    panic("Invalid Solution")
+                }
+                currentDifficulty = rateDifficulty(&game)
+                if currentDifficulty != difficulty {
+                    generateSudoku(difficulty, seed+rng.Int(), quit, result)
+                }
+                result <- game
+                return
+            } else if numSolutions == 0 {
+                isRetry = true
+                game = previousGame
+            } else {
+                previousGame = game
+                previousNumSolutions = numSolutions
+                fillRandomCell(&game, rng)
+                isRetry = false
+            }
         }
     }
 }

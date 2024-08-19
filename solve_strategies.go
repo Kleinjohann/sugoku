@@ -419,6 +419,49 @@ var solveStrategies = []SolveStrategy{
     // yWing,
 }
 
+var strategyDifficulty = map[string]int{
+    "Naked Single":   1,
+    "Hidden Single":  1,
+    "Naked Pair":     2,
+    "Naked Triple":   2,
+    "Naked Quad":     2,
+    "Pointing Group": 2,
+    "Box Reduction":  2,
+    "Hidden Pair":    3,
+    "Hidden Triple":  3,
+    "Hidden Quad":    3,
+    "X-Wing":         4,
+    "Swordfish":      4,
+    "Skyscraper":     4,
+    "Y-Wing":         4,
+}
+
+var maxDifficulty = 5
+
+var validDifficulties = []int{0, 1, 2, 3, maxDifficulty} // 0 for random difficulty
+
+func rateDifficulty(game *Sudoku) int {
+    gameCopy := *game
+    var steps []SolutionStep
+    var difficulty int
+    for !isSolved(gameCopy.board) {
+        for _, strategy := range solveStrategies {
+            steps = strategy(&gameCopy)
+            if len(steps) > 0 {
+                break
+            }
+        }
+        if len(steps) == 0 {
+            return maxDifficulty
+        }
+        for _, step := range steps {
+            step.Apply(&gameCopy)
+            difficulty = max(difficulty, strategyDifficulty[step.strategy])
+        }
+    }
+    return difficulty
+}
+
 func solvableUsingStrategies(game *Sudoku, strategies []SolveStrategy) bool {
     gameCopy := *game
     var steps []SolutionStep

@@ -21,10 +21,27 @@ Note that this will install the program in your `$GOPATH/bin` directory. Make su
 ## Usage
 
 ```bash
-sugoku [--print]
+sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>]
+  -difficulty int
+        difficulty of the generated sudoku, 0 for random difficulty (default 0)
+  -print
+        print a generated sudoku and its solution and exit
+  -cores int
+        number of cores to use, -1 for all cores (default -1)
+  -seed int
+        seed for random number generator, -1 for random seed (default -1)
+  -cpuprofile file
+        write cpu profile to file
 ```
 
-When the `--print` flag is set, the program simply prints a generated Sudoku and its solution.
+The exact difficulty mapping is as follows (bracketed strategies are not implemented yet):
+1. Naked Single, Hidden Single
+2. Naked Pair, Naked Triple, Naked Quad, (Pointing Group), (Box Reduction)
+3. Hidden Pair, Hidden Triple, Hidden Quad
+4. (X-Wing), (Swordfish), (Skyscraper), (Y-Wing)
+5. Not solvable using all of the above
+
+When the `-print` flag is set, the program simply prints a generated Sudoku and its solution.
 Otherwise, you are presented with a TUI to solve a randomly generated Sudoku puzzle.
 
 Example screenshot of the TUI:
@@ -80,10 +97,7 @@ Solution:
 
 ## Planned Improvements
 
-- Add a difficulty metric and let the user choose the difficulty of the generated puzzle
-    - Implement more solving strategies
-    - Rank the strategies by difficulty and always apply them in order of increasing difficulty
-    - Puzzle difficulty is then determined by number and difficulty of required strategies
+- Implement more solving strategies
 - Improve the TUI
     - Allow selection of multiple cells to enter multiple candidates at once
     - Improve keymap and hint formatting for narrow terminal windows

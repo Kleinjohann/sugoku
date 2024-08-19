@@ -4,8 +4,10 @@ import (
     "flag"
     "fmt"
     "log"
+    "math/rand/v2"
     "os"
     "runtime/pprof"
+    "slices"
     "strings"
 )
 
@@ -56,8 +58,8 @@ func printBoard(board [9][9]uint8) {
     fmt.Println(builder.String())
 }
 
-func runPrint(seed int, cores int) {
-    sudoku := generateSudokuParallel(seed, cores)
+func runPrint(difficulty int, seed int, cores int) {
+    sudoku := generateSudokuParallel(difficulty, seed, cores)
     println("Generated Sudoku:")
     printBoard(sudoku.board)
     println("Solution:")
@@ -70,10 +72,11 @@ func main() {
         print      = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
         seed       = flag.Int("seed", -1, "seed for random number generator, -1 for random seed")
         cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
+        difficulty = flag.Int("difficulty", 0, "difficulty of the generated sudoku, 0 for random difficulty (default 0)")
     )
     flag.Usage = func() {
         fmt.Fprintf(flag.CommandLine.Output(),
-            "Usage: sugoku [-print] [-cpuprofile]\n")
+            "Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>]\n")
         flag.PrintDefaults()
     }
     flag.Parse()
@@ -90,9 +93,15 @@ func main() {
         defer pprof.StopCPUProfile()
     }
 
+    if !slices.Contains(validDifficulties, *difficulty) {
+        log.Fatal("difficulty must be between 0 and 3")
+    } else if *difficulty == 0 {
+        *difficulty = validDifficulties[rand.IntN(len(validDifficulties))]
+    }
+
     if *print {
-        runPrint(*seed, *cores)
+        runPrint(*difficulty, *seed, *cores)
     } else {
-        runTui(*seed, *cores)
+        runTui(*difficulty, *seed, *cores)
     }
 }

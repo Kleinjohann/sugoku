@@ -15,6 +15,7 @@ type model struct {
     game       Sudoku
     tipsGame   Sudoku
     editable   [9][9]bool
+    difficulty int
     cursor     [2]int
     keys       keyMap
     help       help.Model
@@ -139,8 +140,8 @@ var completedNumberForeground = lipgloss.Color("2")
 var editableForeground = lipgloss.Color("4")
 var uneditableForeground = lipgloss.Color("15")
 
-func initialModel(seed int, cores int) model {
-    game := generateSudokuParallel(seed, cores)
+func initialModel(difficulty int, seed int, cores int) model {
+    game := generateSudokuParallel(difficulty, seed, cores)
     editable := [9][9]bool{}
     for i := 0; i < 9; i++ {
         for j := 0; j < 9; j++ {
@@ -155,6 +156,7 @@ func initialModel(seed int, cores int) model {
         game:     game,
         tipsGame: tipsGame,
         editable: editable,
+        difficulty: difficulty,
         cursor:   [2]int{4, 4},
         keys:     keys,
         help:     help.New(),
@@ -183,7 +185,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             return m, tea.Quit
 
         case key.Matches(msg, keys.NewGame):
-            return initialModel(-1, m.cores), nil
+            return initialModel(m.difficulty, -1, m.cores), nil
 
         case key.Matches(msg, keys.Up):
             m.cursor[0] = (m.cursor[0] - 1 + 9) % 9
@@ -477,8 +479,8 @@ func toggleTips(m *model) {
     }
 }
 
-func runTui(seed int, cores int) {
-    p := tea.NewProgram(initialModel(seed, cores))
+func runTui(difficulty int, seed int, cores int) {
+    p := tea.NewProgram(initialModel(difficulty, seed, cores))
     if _, err := p.Run(); err != nil {
         fmt.Printf("Error: %v", err)
         os.Exit(1)
