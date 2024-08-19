@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    "golang.org/x/exp/constraints"
     "golang.org/x/exp/maps"
     "slices"
 )
@@ -109,7 +110,10 @@ func isDuplicateEffect(steps []SolutionStep, row int, col int, value uint8) bool
     return false
 }
 
-func isSuperset(setA []uint8, setB []uint8) bool {
+func isSuperset[Int constraints.Integer](setA []Int, setB []Int) bool {
+    if len(setA) < len(setB) {
+        return isSuperset(setB, setA)
+    }
     for _, item := range setB {
         if !slices.Contains(setA, item) {
             return false
@@ -118,24 +122,49 @@ func isSuperset(setA []uint8, setB []uint8) bool {
     return true
 }
 
-func findNakedSets(candidates map[int][]uint8, setSize int) [][]int {
-    var setIndices [][]int
-    var currentSetIndices []int
-    var currentCandidates, otherCandidates []uint8
+func getContextCandidatePossibilities(game *Sudoku, context Context, contextIdx int) map[uint8][]int {
+    var row, col int
+    var candidates []uint8
+    possibilities := make(map[uint8][]int)
+    switch context {
+    case Cell:
+        row, col = getCell(context, contextIdx, 0)
+        candidates = getCandidates(game, row, col)
+        for _, candidate := range candidates {
+            possibilities[candidate] = []int{0}
+        }
+    default:
+        contextCandidates := getContextCandidates(game, context, contextIdx)
+        for i, candidates := range contextCandidates {
+            for _, candidate := range candidates {
+                possibilities[candidate] = append(possibilities[candidate], i)
+            }
+        }
+    }
+    return possibilities
+}
+
+func findSets[keyType constraints.Integer, valueType constraints.Integer](candidates map[keyType][]valueType, setSize int) [][]keyType {
+    var setIndices [][]keyType
+    var currentSetIndices []keyType
+    var currentValues, otherValues []valueType
     numCells := len(candidates)
     if numCells < setSize {
         return setIndices
     }
     keys := maps.Keys(candidates)
     for currentIdx, currentKey := range keys[:numCells-1] {
-        currentCandidates = candidates[currentKey]
-        if len(currentCandidates) != setSize {
+        currentValues = candidates[currentKey]
+        if len(currentValues) > setSize {
             continue
         }
-        currentSetIndices = []int{currentKey}
+        currentSetIndices = []keyType{currentKey}
         for _, otherKey := range keys[currentIdx+1:] {
-            otherCandidates = candidates[otherKey]
-            if isSuperset(currentCandidates, otherCandidates) {
+            otherValues = candidates[otherKey]
+            if len(otherValues) > setSize {
+                continue
+            }
+            if isSuperset(currentValues, otherValues) {
                 currentSetIndices = append(currentSetIndices, otherKey)
             }
         }
@@ -236,7 +265,7 @@ func nakedPair(game *Sudoku) []SolutionStep {
     for _, context = range []Context{Row, Column, Box} {
         for contextIdx := range 9 {
             contextCandidates = getContextCandidates(game, context, contextIdx)
-            pairIndices = findNakedSets(contextCandidates, 2)
+            pairIndices = findSets(contextCandidates, 2)
             for _, pair := range pairIndices {
                 pairCandidates = contextCandidates[pair[0]]
                 targetCells = [][]int{}
@@ -289,11 +318,77 @@ func nakedPair(game *Sudoku) []SolutionStep {
     return steps
 }
 
+func hiddenPair(game *Sudoku) []SolutionStep {
+    var steps []SolutionStep
+    var description string
+    var row, col, cellIdx int
+    var candidate uint8
+    var targetCells [][]int
+    var pairIndices []int
+    var candidates, pairCandidates, targetValues []uint8
+    var pairs [][]uint8
+    var context Context
+    var possibilities map[uint8][]int
+    for _, context = range []Context{Row, Column, Box} {
+        for contextIdx := range 9 {
+            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
+            pairs = findSets(possibilities, 2)
+            for _, pairCandidates = range pairs {
+                pairIndices = possibilities[pairCandidates[0]]
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                for _, cellIdx = range pairIndices {
+                    row, col = getCell(context, contextIdx, cellIdx)
+                    candidates = getCandidates(game, row, col)
+                    for _, candidate = range candidates {
+                        if slices.Contains(pairCandidates, candidate) {
+                            continue
+                        }
+                        // printBoard(game.board)
+                        // fmt.Println(context.String(), contextIdx, pairIndices, pairCandidates)
+                        if isDuplicateEffect(steps, row, col, candidate) {
+                            continue
+                        }
+                        targetCells = append(targetCells, []int{row, col})
+                        targetValues = append(targetValues, candidate)
+                    }
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                row1, col1 := getCell(context, contextIdx, pairIndices[0])
+                row2, col2 := getCell(context, contextIdx, pairIndices[1])
+                contextStr := context.String()
+                description = fmt.Sprintf("In %s %d, %d and %d can only go in r%dc%d and r%dc%d",
+                    contextStr,
+                    contextIdx+1,
+                    pairCandidates[0],
+                    pairCandidates[1],
+                    row1+1,
+                    col1+1,
+                    row2+1,
+                    col2+1)
+                // fmt.Println(description)
+                steps = append(steps, SolutionStep{
+                    strategy:      "Hidden Pair",
+                    description:   description,
+                    sourceContext: context,
+                    sourceIndices: []int{contextIdx},
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
 var solveStrategies = []SolveStrategy{
     nakedSingle,
     hiddenSingle,
     nakedPair,
-    // hiddenPair,
+    hiddenPair,
     // nakedTriple,
     // hiddenTriple,
     // nakedQuad,
