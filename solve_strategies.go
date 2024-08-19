@@ -101,8 +101,8 @@ func isDuplicateEffect(steps []SolutionStep, row int, col int, value uint8) bool
     for _, step := range steps {
         for i, targetCell := range step.targetCells {
             if targetCell[0] == row &&
-                    targetCell[1] == col &&
-                    step.targetValues[i] == value {
+                targetCell[1] == col &&
+                step.targetValues[i] == value {
                 return true
             }
         }
@@ -209,7 +209,7 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
     var context Context
     for _, context = range []Context{Row, Column, Box} {
         for contextIdx := range 9 {
-            candidateLoop:
+        candidateLoop:
             for candidateIdx := range 9 {
                 count = 0
                 for cell_idx := 0; cell_idx < 9; cell_idx++ {
@@ -254,31 +254,29 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
     return steps
 }
 
-func nakedPair(game *Sudoku) []SolutionStep {
+func nakedSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
     var steps []SolutionStep
     var description string
     var row, col int
-    var pairIndices, targetCells [][]int
-    var targetValues, pairCandidates []uint8
+    var setIndices, targetCells [][]int
+    var targetValues, setCandidates []uint8
     var context Context
     var contextCandidates map[int][]uint8
     for _, context = range []Context{Row, Column, Box} {
         for contextIdx := range 9 {
             contextCandidates = getContextCandidates(game, context, contextIdx)
-            pairIndices = findSets(contextCandidates, 2)
-            for _, pair := range pairIndices {
-                pairCandidates = contextCandidates[pair[0]]
+            setIndices = findSets(contextCandidates, setSize)
+            for _, set := range setIndices {
+                setCandidates = contextCandidates[set[0]]
                 targetCells = [][]int{}
                 targetValues = []uint8{}
                 for otherIdx, otherCandidates := range contextCandidates {
-                    if slices.Contains(pair, otherIdx) {
+                    if slices.Contains(set, otherIdx) {
                         continue
                     }
-                    // printBoard(game.board)
-                    // fmt.Println(context.String(), contextIdx, pair, pairCandidates)
                     row, col = getCell(context, contextIdx, otherIdx)
                     for _, candidate := range otherCandidates {
-                        if slices.Contains(pairCandidates, candidate) {
+                        if slices.Contains(setCandidates, candidate) {
                             if isDuplicateEffect(steps, row, col, candidate) {
                                 continue
                             }
@@ -290,21 +288,91 @@ func nakedPair(game *Sudoku) []SolutionStep {
                 if len(targetCells) == 0 {
                     continue
                 }
-                row1, col1 := getCell(context, contextIdx, pair[0])
-                row2, col2 := getCell(context, contextIdx, pair[1])
                 contextStr := context.String()
-                description = fmt.Sprintf("In %s %d, %d and %d have to go in r%dc%d and r%dc%d",
-                    contextStr,
-                    contextIdx+1,
-                    pairCandidates[0],
-                    pairCandidates[1],
-                    row1+1,
-                    col1+1,
-                    row2+1,
-                    col2+1)
-                // fmt.Println(description)
+                description = fmt.Sprintf("In %s %d, ", contextStr, contextIdx+1)
+                for _, setCandidate := range setCandidates {
+                    description += fmt.Sprintf("%d ", setCandidate)
+                }
+                description += "have to go in"
+                for _, cellIdx := range set {
+                    row, col = getCell(context, contextIdx, cellIdx)
+                    description += fmt.Sprintf(" r%dc%d", row+1, col+1)
+                }
                 steps = append(steps, SolutionStep{
-                    strategy:      "Naked Pair",
+                    strategy:      strategyName,
+                    description:   description,
+                    sourceContext: context,
+                    sourceIndices: []int{contextIdx},
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
+func nakedPair(game *Sudoku) []SolutionStep {
+    return nakedSet(game, 2, "Naked Pair")
+}
+
+func nakedTriple(game *Sudoku) []SolutionStep {
+    return nakedSet(game, 3, "Naked Triple")
+}
+
+func nakedQuad(game *Sudoku) []SolutionStep {
+    return nakedSet(game, 4, "Naked Quad")
+}
+
+func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
+    var steps []SolutionStep
+    var description string
+    var row, col, cellIdx int
+    var candidate uint8
+    var targetCells [][]int
+    var setIndices []int
+    var candidates, setCandidates, targetValues []uint8
+    var sets [][]uint8
+    var context Context
+    var possibilities map[uint8][]int
+    for _, context = range []Context{Row, Column, Box} {
+        for contextIdx := range 9 {
+            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
+            sets = findSets(possibilities, setSize)
+            for _, setCandidates = range sets {
+                setIndices = possibilities[setCandidates[0]]
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                for _, cellIdx = range setIndices {
+                    row, col = getCell(context, contextIdx, cellIdx)
+                    candidates = getCandidates(game, row, col)
+                    for _, candidate = range candidates {
+                        if slices.Contains(setCandidates, candidate) {
+                            continue
+                        }
+                        if isDuplicateEffect(steps, row, col, candidate) {
+                            continue
+                        }
+                        targetCells = append(targetCells, []int{row, col})
+                        targetValues = append(targetValues, candidate)
+                    }
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                contextStr := context.String()
+                description = fmt.Sprintf("In %s %d, ", contextStr, contextIdx+1)
+                for _, setCandidate := range setCandidates {
+                    description += fmt.Sprintf("%d ", setCandidate)
+                }
+                description += "can only go in"
+                for _, cellIdx := range setIndices {
+                    row, col = getCell(context, contextIdx, cellIdx)
+                    description += fmt.Sprintf(" r%dc%d", row+1, col+1)
+                }
+                steps = append(steps, SolutionStep{
+                    strategy:      strategyName,
                     description:   description,
                     sourceContext: context,
                     sourceIndices: []int{contextIdx},
@@ -319,69 +387,15 @@ func nakedPair(game *Sudoku) []SolutionStep {
 }
 
 func hiddenPair(game *Sudoku) []SolutionStep {
-    var steps []SolutionStep
-    var description string
-    var row, col, cellIdx int
-    var candidate uint8
-    var targetCells [][]int
-    var pairIndices []int
-    var candidates, pairCandidates, targetValues []uint8
-    var pairs [][]uint8
-    var context Context
-    var possibilities map[uint8][]int
-    for _, context = range []Context{Row, Column, Box} {
-        for contextIdx := range 9 {
-            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
-            pairs = findSets(possibilities, 2)
-            for _, pairCandidates = range pairs {
-                pairIndices = possibilities[pairCandidates[0]]
-                targetCells = [][]int{}
-                targetValues = []uint8{}
-                for _, cellIdx = range pairIndices {
-                    row, col = getCell(context, contextIdx, cellIdx)
-                    candidates = getCandidates(game, row, col)
-                    for _, candidate = range candidates {
-                        if slices.Contains(pairCandidates, candidate) {
-                            continue
-                        }
-                        // printBoard(game.board)
-                        // fmt.Println(context.String(), contextIdx, pairIndices, pairCandidates)
-                        if isDuplicateEffect(steps, row, col, candidate) {
-                            continue
-                        }
-                        targetCells = append(targetCells, []int{row, col})
-                        targetValues = append(targetValues, candidate)
-                    }
-                }
-                if len(targetCells) == 0 {
-                    continue
-                }
-                row1, col1 := getCell(context, contextIdx, pairIndices[0])
-                row2, col2 := getCell(context, contextIdx, pairIndices[1])
-                contextStr := context.String()
-                description = fmt.Sprintf("In %s %d, %d and %d can only go in r%dc%d and r%dc%d",
-                    contextStr,
-                    contextIdx+1,
-                    pairCandidates[0],
-                    pairCandidates[1],
-                    row1+1,
-                    col1+1,
-                    row2+1,
-                    col2+1)
-                // fmt.Println(description)
-                steps = append(steps, SolutionStep{
-                    strategy:      "Hidden Pair",
-                    description:   description,
-                    sourceContext: context,
-                    sourceIndices: []int{contextIdx},
-                    targetCells:   targetCells,
-                    targetValues:  targetValues,
-                    effectType:    RemoveCandidate,
-                })
-            }
-        }
-    }
-    return steps
+    return hiddenSet(game, 2, "Hidden Pair")
+}
+
+func hiddenTriple(game *Sudoku) []SolutionStep {
+    return hiddenSet(game, 3, "Hidden Triple")
+}
+
+func hiddenQuad(game *Sudoku) []SolutionStep {
+    return hiddenSet(game, 4, "Hidden Quad")
 }
 
 var solveStrategies = []SolveStrategy{
@@ -389,10 +403,10 @@ var solveStrategies = []SolveStrategy{
     hiddenSingle,
     nakedPair,
     hiddenPair,
-    // nakedTriple,
-    // hiddenTriple,
-    // nakedQuad,
-    // hiddenQuad,
+    nakedTriple,
+    hiddenTriple,
+    nakedQuad,
+    hiddenQuad,
     // pointingGroup,
     // boxReduction,
     // xWing,
