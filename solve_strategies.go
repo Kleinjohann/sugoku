@@ -159,14 +159,18 @@ func findSets[keyType constraints.Integer, valueType constraints.Integer](candid
             continue
         }
         currentSetIndices = []keyType{currentKey}
+        otherKeyLoop:
         for _, otherKey := range keys[currentIdx+1:] {
             otherValues = candidates[otherKey]
             if len(otherValues) > setSize {
                 continue
             }
-            if isSuperset(currentValues, otherValues) {
-                currentSetIndices = append(currentSetIndices, otherKey)
+            for _, setIdx := range currentSetIndices {
+                if !isSuperset(candidates[setIdx], otherValues) {
+                    continue otherKeyLoop
+                }
             }
+            currentSetIndices = append(currentSetIndices, otherKey)
         }
         if len(currentSetIndices) == setSize {
             setIndices = append(setIndices, currentSetIndices)
