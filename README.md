@@ -20,7 +20,7 @@ Note that this will install the program in your `$GOPATH/bin` directory. Make su
 
 ## Usage
 
-```bash
+```
 sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>]
   -difficulty int
         difficulty of the generated sudoku, 0 for random difficulty (default 0)
@@ -34,7 +34,8 @@ sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <f
         write cpu profile to file
 ```
 
-The exact difficulty mapping is as follows (bracketed strategies are not implemented yet):
+A puzzle's difficulty is given by the difficulty of the hardest strategy required to solve it.
+The exact strategy difficulty mapping is as follows (bracketed strategies are not implemented yet):
 1. Naked Single, Hidden Single
 2. Naked Pair, Naked Triple, Naked Quad, Pointing Group, Box Reduction
 3. Hidden Pair, Hidden Triple, Hidden Quad
