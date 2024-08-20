@@ -65,6 +65,65 @@ func getContextCandidates(game *Sudoku, context Context, contextIdx int) map[int
     return candidates
 }
 
+func getContextIdx(context Context, row int, col int) int {
+    switch context {
+    case Row:
+        return row
+    case Column:
+        return col
+    case Box:
+        return getBoxIdFromCell(row, col)
+    default:
+        return 9*row + col
+    }
+}
+
+func inSameBox(indices []int, context Context, contextIdx int) bool {
+    var row, col, idx int
+    var boxRowStart, boxColStart, boxRowEnd, boxColEnd int
+    row, col = getCell(context, contextIdx, indices[0])
+    boxRowStart, boxColStart = getBoxStartsFromCell(row, col)
+    boxRowEnd, boxColEnd = boxRowStart+2, boxColStart+2
+    for _, idx = range indices[1:] {
+        row, col = getCell(context, contextIdx, idx)
+        if row < boxRowStart || row > boxRowEnd ||
+            col < boxColStart || col > boxColEnd {
+            return false
+        }
+    }
+    return true
+}
+
+func inSameContext(targetContext Context, indices []int, context Context, contextIdx int) bool {
+    var idx, otherRow, otherCol int
+    row, col := getCell(context, contextIdx, indices[0])
+    switch targetContext {
+    case Row:
+        for _, idx = range indices[1:] {
+            otherRow, _ = getCell(context, contextIdx, idx)
+            if otherRow != row {
+                return false
+            }
+        }
+    case Column:
+        for _, idx = range indices[1:] {
+            _, otherCol = getCell(context, contextIdx, idx)
+            if otherCol != col {
+                return false
+            }
+        }
+    case Box:
+        boxId := getBoxIdFromCell(row, col)
+        for _, idx = range indices[1:] {
+            otherRow, otherCol = getCell(context, contextIdx, idx)
+            if getBoxIdFromCell(otherRow, otherCol) != boxId {
+                return false
+            }
+        }
+    }
+    return true
+}
+
 type Effect int
 
 const (
@@ -402,17 +461,145 @@ func hiddenQuad(game *Sudoku) []SolutionStep {
     return hiddenSet(game, 4, "Hidden Quad")
 }
 
+func pointingGroup(game *Sudoku) []SolutionStep {
+    var steps []SolutionStep
+    var description string
+    var sourceRow, sourceCol, row, col, boxId, targetBoxId, contextIdx int
+    var targetContext Context
+    var possibilities map[uint8][]int
+    var targetCells   [][]int
+    var candidates, targetValues  []uint8
+    for boxId = range 9 {
+        possibilities = getContextCandidatePossibilities(game, Box, boxId)
+        candidates = maps.Keys(possibilities)
+        for _, candidate := range candidates {
+            numPossibilities := len(possibilities[candidate])
+            if numPossibilities < 2 || numPossibilities > 3 {
+                continue
+            }
+            for _, targetContext = range []Context{Row, Column} {
+                if !inSameContext(targetContext, possibilities[candidate], Box, boxId) {
+                    continue
+                }
+                sourceRow, sourceCol = getCell(Box, boxId, possibilities[candidate][0])
+                contextIdx = getContextIdx(targetContext, sourceRow, sourceCol)
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                for idx := range 9 {
+                    row, col = getCell(targetContext, contextIdx, idx)
+                    targetBoxId = getBoxIdFromCell(row, col)
+                    if targetBoxId == boxId {
+                        continue
+                    } else if game.board[row][col] != 0 {
+                        continue
+                    } else if !game.candidates[row][col][candidate-1] {
+                        continue
+                    } else if isDuplicateEffect(steps, row, col, candidate) {
+                        continue
+                    }
+                    targetCells = append(targetCells, []int{row, col})
+                    targetValues = append(targetValues, candidate)
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                description = fmt.Sprintf("In %s %d, %d has to be in box %d",
+                    targetContext.String(),
+                    contextIdx+1,
+                    candidate,
+                    boxId+1)
+                steps = append(steps, SolutionStep{
+                    strategy:      "Pointing Group",
+                    description:   description,
+                    sourceContext: Box,
+                    sourceIndices: []int{boxId},
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
+func boxReduction(game *Sudoku) []SolutionStep {
+    var steps []SolutionStep
+    var description string
+    var row, col, boxId, boxRowStart, boxColStart, boxRowEnd, boxColEnd int
+    var context Context
+    var possibilities map[uint8][]int
+    var targetCells   [][]int
+    var candidates, targetValues  []uint8
+    for _, context = range []Context{Row, Column} {
+        for contextIdx := range 9 {
+            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
+            candidates = maps.Keys(possibilities)
+            for _, candidate := range candidates {
+                numPossibilities := len(possibilities[candidate])
+                if numPossibilities < 2 || numPossibilities > 3 {
+                    continue
+                } else if !inSameBox(possibilities[candidate], context, contextIdx) {
+                    continue
+                }
+                row, col = getCell(context, contextIdx, possibilities[candidate][0])
+                boxId = getBoxIdFromCell(row, col)
+                boxRowStart, boxColStart = getBoxStartsFromBoxId(boxId)
+                boxRowEnd, boxColEnd = boxRowStart+2, boxColStart+2
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                for row = boxRowStart; row <= boxRowEnd; row++ {
+                    if context == Row && row == contextIdx {
+                        continue
+                    }
+                    for col = boxColStart; col <= boxColEnd; col++ {
+                        if context == Column && col == contextIdx {
+                            continue
+                        } else if game.board[row][col] != 0 {
+                            continue
+                        } else if !game.candidates[row][col][candidate-1] {
+                            continue
+                        } else if isDuplicateEffect(steps, row, col, candidate) {
+                            continue
+                        }
+                        targetCells = append(targetCells, []int{row, col})
+                        targetValues = append(targetValues, candidate)
+                    }
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                description = fmt.Sprintf("In box %d, %d has to be in %s %d",
+                    boxId+1,
+                    candidate,
+                    context.String(),
+                    contextIdx+1)
+                steps = append(steps, SolutionStep{
+                    strategy:      "Box Reduction",
+                    description:   description,
+                    sourceContext: context,
+                    sourceIndices: []int{contextIdx},
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
 var solveStrategies = []SolveStrategy{
     nakedSingle,
     hiddenSingle,
     nakedPair,
-    hiddenPair,
     nakedTriple,
-    hiddenTriple,
     nakedQuad,
+    pointingGroup,
+    boxReduction,
+    hiddenPair,
+    hiddenTriple,
     hiddenQuad,
-    // pointingGroup,
-    // boxReduction,
     // xWing,
     // skyscraper,
     // swordfish,

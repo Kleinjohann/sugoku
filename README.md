@@ -36,7 +36,7 @@ sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <f
 
 The exact difficulty mapping is as follows (bracketed strategies are not implemented yet):
 1. Naked Single, Hidden Single
-2. Naked Pair, Naked Triple, Naked Quad, (Pointing Group), (Box Reduction)
+2. Naked Pair, Naked Triple, Naked Quad, Pointing Group, Box Reduction
 3. Hidden Pair, Hidden Triple, Hidden Quad
 4. (X-Wing), (Swordfish), (Skyscraper), (Y-Wing)
 5. Not solvable using all of the above

@@ -259,8 +259,12 @@ func getBoxStartsFromBoxId(boxId int) (int, int) {
     return boxRowStart, boxColumnStart
 }
 
+func getBoxIdFromCell(row int, col int) int {
+    return (row/3)*3 + (col / 3)
+}
+
 func getBoxStartsFromCell(row int, col int) (int, int) {
-    boxId := (row/3)*3 + (col / 3)
+    boxId := getBoxIdFromCell(row, col)
     return getBoxStartsFromBoxId(boxId)
 }
 
