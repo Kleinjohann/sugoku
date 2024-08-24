@@ -39,8 +39,10 @@ The exact strategy difficulty mapping is as follows (bracketed strategies are no
 1. Naked Single, Hidden Single
 2. Naked Pair, Naked Triple, Naked Quad, Pointing Group, Box Reduction
 3. Hidden Pair, Hidden Triple, Hidden Quad
-4. (X-Wing), (Swordfish), (Skyscraper), (Y-Wing)
+4. X-Wing, Swordfish, Jellyfish, (Skyscraper), (Y-Wing)
 5. Not solvable using all of the above
+
+Note that puzzles of difficulty >= 4 are quite rare and may take a while to generate.
 
 When the `-print` flag is set, the program simply prints a generated Sudoku and its solution.
 Otherwise, you are presented with a TUI to solve a randomly generated Sudoku puzzle.

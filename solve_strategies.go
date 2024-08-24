@@ -124,6 +124,15 @@ func inSameContext(targetContext Context, indices []int, context Context, contex
     return true
 }
 
+func resolveRowCol(context1 Context, contextIdx1 int, context2 Context, contextIdx2 int) (int, int) {
+    if context1 == Row && context2 == Column {
+        return contextIdx1, contextIdx2
+    } else if context1 == Column && context2 == Row {
+        return contextIdx2, contextIdx1
+    }
+    panic("Invalid contexts")
+}
+
 type Effect int
 
 const (
@@ -169,6 +178,18 @@ func isDuplicateEffect(steps []SolutionStep, row int, col int, value uint8) bool
     return false
 }
 
+func getAllUniqueMapValues[keyType constraints.Integer, valueType constraints.Integer](m map[keyType][]valueType, keys []keyType) []valueType {
+    var values []valueType
+    for _, key := range keys {
+        for _, value := range m[key] {
+            if !slices.Contains(values, value) {
+                values = append(values, value)
+            }
+        }
+    }
+    return values
+}
+
 func isSuperset[Int constraints.Integer](setA []Int, setB []Int) bool {
     if len(setA) < len(setB) {
         return isSuperset(setB, setA)
@@ -181,7 +202,7 @@ func isSuperset[Int constraints.Integer](setA []Int, setB []Int) bool {
     return true
 }
 
-func getContextCandidatePossibilities(game *Sudoku, context Context, contextIdx int) map[uint8][]int {
+func getContextPossibilitiesByCandidate(game *Sudoku, context Context, contextIdx int) map[uint8][]int {
     var row, col int
     var candidates []uint8
     possibilities := make(map[uint8][]int)
@@ -203,6 +224,40 @@ func getContextCandidatePossibilities(game *Sudoku, context Context, contextIdx 
     return possibilities
 }
 
+func getCandidatePossibilitiesInContext(game *Sudoku, context Context, contextIdx int, candidate uint8) []int {
+    var row, col int
+    var possibilities []int
+    switch context {
+    case Cell:
+        row, col = getCell(context, contextIdx, 0)
+        if game.board[row][col] == 0 && game.candidates[row][col][candidate-1] {
+            possibilities = []int{0}
+        } else {
+            possibilities = []int{}
+        }
+    default:
+        for cellIdx := range 9 {
+            row, col = getCell(context, contextIdx, cellIdx)
+            if game.board[row][col] == 0 && game.candidates[row][col][candidate-1] {
+                possibilities = append(possibilities, cellIdx)
+            }
+        }
+    }
+    return possibilities
+}
+
+func getCandidatePossibilitiesByContextIdx(game *Sudoku, context Context, candidate uint8) map[int][]int {
+    possibilities := make(map[int][]int)
+    if context == Cell {
+        panic("Cannot get candidate possibilities by context index for cell context")
+    }
+    for contextIdx := range 9 {
+        contextPossibilities := getCandidatePossibilitiesInContext(game, context, contextIdx, candidate)
+        possibilities[contextIdx] = contextPossibilities
+    }
+    return possibilities
+}
+
 func findSets[keyType constraints.Integer, valueType constraints.Integer](candidates map[keyType][]valueType, setSize int) [][]keyType {
     var setIndices [][]keyType
     var currentSetIndices []keyType
@@ -216,12 +271,16 @@ func findSets[keyType constraints.Integer, valueType constraints.Integer](candid
         currentValues = candidates[currentKey]
         if len(currentValues) > setSize {
             continue
+        } else if len(currentValues) == 0 {
+            continue
         }
         currentSetIndices = []keyType{currentKey}
         otherKeyLoop:
         for _, otherKey := range keys[currentIdx+1:] {
             otherValues = candidates[otherKey]
             if len(otherValues) > setSize {
+                continue
+            } else if len(otherValues) == 0 {
                 continue
             }
             for _, setIdx := range currentSetIndices {
@@ -330,7 +389,7 @@ func nakedSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
             contextCandidates = getContextCandidates(game, context, contextIdx)
             setIndices = findSets(contextCandidates, setSize)
             for _, set := range setIndices {
-                setCandidates = contextCandidates[set[0]]
+                setCandidates = getAllUniqueMapValues(contextCandidates, set)
                 targetCells = [][]int{}
                 targetValues = []uint8{}
                 for otherIdx, otherCandidates := range contextCandidates {
@@ -401,10 +460,10 @@ func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
     var possibilities map[uint8][]int
     for _, context = range []Context{Row, Column, Box} {
         for contextIdx := range 9 {
-            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
+            possibilities = getContextPossibilitiesByCandidate(game, context, contextIdx)
             sets = findSets(possibilities, setSize)
             for _, setCandidates = range sets {
-                setIndices = possibilities[setCandidates[0]]
+                setIndices = getAllUniqueMapValues(possibilities, setCandidates)
                 targetCells = [][]int{}
                 targetValues = []uint8{}
                 for _, cellIdx = range setIndices {
@@ -470,7 +529,7 @@ func pointingGroup(game *Sudoku) []SolutionStep {
     var targetCells   [][]int
     var candidates, targetValues  []uint8
     for boxId = range 9 {
-        possibilities = getContextCandidatePossibilities(game, Box, boxId)
+        possibilities = getContextPossibilitiesByCandidate(game, Box, boxId)
         candidates = maps.Keys(possibilities)
         for _, candidate := range candidates {
             numPossibilities := len(possibilities[candidate])
@@ -533,7 +592,7 @@ func boxReduction(game *Sudoku) []SolutionStep {
     var candidates, targetValues  []uint8
     for _, context = range []Context{Row, Column} {
         for contextIdx := range 9 {
-            possibilities = getContextCandidatePossibilities(game, context, contextIdx)
+            possibilities = getContextPossibilitiesByCandidate(game, context, contextIdx)
             candidates = maps.Keys(possibilities)
             for _, candidate := range candidates {
                 numPossibilities := len(possibilities[candidate])
@@ -589,6 +648,80 @@ func boxReduction(game *Sudoku) []SolutionStep {
     return steps
 }
 
+func basicFish(game *Sudoku, fishSize int, strategyName string) []SolutionStep {
+    var steps []SolutionStep
+    var candidate uint8
+    contexts := []Context{Row, Column}
+    var description string
+    var otherContext Context
+    var otherContextIdx, cellIdx, row, col int
+    var otherContextIndices []int
+    var possibilities map[int][]int
+    var sets, targetCells [][]int
+    var targetValues []uint8
+    for i, context := range contexts {
+        otherContext = contexts[(i+1)%2]
+        for candidate = 1; candidate <= 9; candidate++ {
+            possibilities = getCandidatePossibilitiesByContextIdx(game, context, candidate)
+            sets = findSets(possibilities, fishSize)
+            for _, contextIndices := range sets {
+                otherContextIndices = getAllUniqueMapValues(possibilities, contextIndices)
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                for _, otherContextIdx = range otherContextIndices {
+                    for cellIdx = range 9 {
+                        row, col = resolveRowCol(context, cellIdx, otherContext, otherContextIdx)
+                        if slices.Contains(contextIndices, cellIdx) {
+                            continue
+                        } else if game.board[row][col] != 0 {
+                            continue
+                        } else if !game.candidates[row][col][candidate-1] {
+                            continue
+                        } else if isDuplicateEffect(steps, row, col, candidate) {
+                            continue
+                        }
+                        targetCells = append(targetCells, []int{row, col})
+                        targetValues = append(targetValues, candidate)
+                    }
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                description = fmt.Sprintf("In %ss", otherContext.String())
+                for _, otherContextIdx := range otherContextIndices {
+                    description += fmt.Sprintf(" %d", otherContextIdx+1)
+                }
+                description += fmt.Sprintf(", %d has to be in %ss", candidate, context.String())
+                for _, contextIdx := range contextIndices {
+                    description += fmt.Sprintf(" %d", contextIdx+1)
+                }
+                steps = append(steps, SolutionStep{
+                    strategy:      strategyName,
+                    description:   description,
+                    sourceContext: context,
+                    sourceIndices: contextIndices,
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
+func xWing(game *Sudoku) []SolutionStep {
+    return basicFish(game, 2, "X-Wing")
+}
+
+func swordfish(game *Sudoku) []SolutionStep {
+    return basicFish(game, 3, "Swordfish")
+}
+
+func jellyfish(game *Sudoku) []SolutionStep {
+    return basicFish(game, 4, "Jellyfish")
+}
+
 var solveStrategies = []SolveStrategy{
     nakedSingle,
     hiddenSingle,
@@ -600,9 +733,10 @@ var solveStrategies = []SolveStrategy{
     hiddenPair,
     hiddenTriple,
     hiddenQuad,
-    // xWing,
+    xWing,
+    swordfish,
+    jellyfish,
     // skyscraper,
-    // swordfish,
     // yWing,
 }
 
@@ -619,13 +753,14 @@ var strategyDifficulty = map[string]int{
     "Hidden Quad":    3,
     "X-Wing":         4,
     "Swordfish":      4,
+    "Jellyfish":      4,
     "Skyscraper":     4,
     "Y-Wing":         4,
 }
 
 var maxDifficulty = 5
 
-var validDifficulties = []int{0, 1, 2, 3, maxDifficulty} // 0 for random difficulty
+var validDifficulties = []int{0, 1, 2, 3, 4, maxDifficulty} // 0 for random difficulty
 
 func rateDifficulty(game *Sudoku) int {
     gameCopy := *game
