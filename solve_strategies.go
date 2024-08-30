@@ -722,6 +722,100 @@ func jellyfish(game *Sudoku) []SolutionStep {
     return basicFish(game, 4, "Jellyfish")
 }
 
+func skyscraper(game *Sudoku) []SolutionStep {
+    var steps []SolutionStep
+    var candidate uint8
+    contexts := []Context{Row, Column}
+    var contextIndices, otherContextIndices []int
+    var description string
+    var otherContext Context
+    var contextIdx, otherContextIdx, cellIdx, row, col int
+    var otherPossibilities []int
+    var possibilities map[int][]int
+    var skyscraperTops, sourceCells, targetCells [][]int
+    var targetValues []uint8
+    for i, context := range contexts {
+        otherContext = contexts[(i+1)%2]
+        for candidate = 1; candidate <= 9; candidate++ {
+            possibilities = getCandidatePossibilitiesByContextIdx(game, context, candidate)
+            contextIndices = []int{}
+            for contextIdx, otherContextIndices = range possibilities {
+                if len(otherContextIndices) == 2 {
+                    contextIndices = append(contextIndices, contextIdx)
+                }
+            }
+            contextIdxLoop:
+            for _, contextIdx := range contextIndices {
+                otherContextIndices = possibilities[contextIdx]
+                skyscraperTops = [][]int{}
+                for _, otherContextIdx = range otherContextIndices {
+                    otherPossibilities = getCandidatePossibilitiesInContext(game, otherContext, otherContextIdx, candidate)
+                    if len(otherPossibilities) != 2 {
+                        continue contextIdxLoop
+                    }
+                    for _, cellIdx = range otherPossibilities {
+                        if cellIdx != contextIdx {
+                            skyscraperTops = append(skyscraperTops, []int{cellIdx, otherContextIdx})
+                        }
+                    }
+                }
+                if len(skyscraperTops) < 2 {
+                    continue
+                } else if skyscraperTops[0][0] == skyscraperTops[1][0] {
+                    continue
+                }
+                targetCells = [][]int{}
+                targetValues = []uint8{}
+                sourceCells = [][]int{}
+                for _, skyscraperTop := range skyscraperTops {
+                    row, col = resolveRowCol(context, skyscraperTop[0], otherContext, skyscraperTop[1])
+                    sourceCells = append(sourceCells, []int{row, col})
+                }
+                for row = range 9 {
+                    for col = range 9 {
+                        if game.board[row][col] != 0 {
+                            continue
+                        } else if !game.candidates[row][col][candidate-1] {
+                            continue
+                        } else if !cellsSeeEachOther(row, col, sourceCells[0][0], sourceCells[0][1]) {
+                            continue
+                        } else if !cellsSeeEachOther(row, col, sourceCells[1][0], sourceCells[1][1]) {
+                            continue
+                        } else if row == sourceCells[0][0] && col == sourceCells[0][1] {
+                            continue
+                        } else if row == sourceCells[1][0] && col == sourceCells[1][1] {
+                            continue
+                        } else if isDuplicateEffect(steps, row, col, candidate) {
+                            continue
+                        }
+                        targetCells = append(targetCells, []int{row, col})
+                        targetValues = append(targetValues, candidate)
+                    }
+                }
+                if len(targetCells) == 0 {
+                    continue
+                }
+                description = fmt.Sprintf("Either r%dc%d or r%dc%d has to be %d",
+                                          sourceCells[0][0]+1,
+                                          sourceCells[0][1]+1,
+                                          sourceCells[1][0]+1,
+                                          sourceCells[1][1]+1,
+                                          candidate)
+                steps = append(steps, SolutionStep{
+                    strategy:      "Skyscraper",
+                    description:   description,
+                    sourceContext: otherContext,
+                    sourceIndices: otherContextIndices,
+                    targetCells:   targetCells,
+                    targetValues:  targetValues,
+                    effectType:    RemoveCandidate,
+                })
+            }
+        }
+    }
+    return steps
+}
+
 var solveStrategies = []SolveStrategy{
     nakedSingle,
     hiddenSingle,
@@ -736,7 +830,7 @@ var solveStrategies = []SolveStrategy{
     xWing,
     swordfish,
     jellyfish,
-    // skyscraper,
+    skyscraper,
     // yWing,
 }
 
