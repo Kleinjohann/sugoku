@@ -24,8 +24,8 @@ func printBoard(board [9][9]uint8) {
     builder.WriteString("|")
     builder.WriteString(strings.Repeat("-", cellWidth))
     builder.WriteString("|" + vPad)
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if j == 0 {
                 builder.WriteString(leftPad + "|" + hPad)
             } else if j%3 == 0 && j != 0 {
@@ -36,7 +36,7 @@ func printBoard(board [9][9]uint8) {
             if board[i][j] == 0 {
                 builder.WriteString(" ")
             } else {
-                builder.WriteString(fmt.Sprintf("%d", board[i][j]))
+                fmt.Fprintf(builder, "%d", board[i][j])
             }
         }
         builder.WriteString(hPad + "|" + vPad + leftPad + "|")

@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "os"
+    "slices"
 
     "github.com/charmbracelet/bubbles/help"
     "github.com/charmbracelet/bubbles/key"
@@ -143,8 +144,8 @@ var uneditableForeground = lipgloss.Color("15")
 func initialModel(difficulty int, seed int, cores int) model {
     game := generateSudokuParallel(difficulty, seed, cores)
     editable := [9][9]bool{}
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if game.board[i][j] == 0 {
                 editable[i][j] = true
             }
@@ -256,9 +257,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
     rows := [][]string{}
     var boxId int
-    for i := 0; i < 3; i++ {
+    for i := range 3 {
         row := []string{}
-        for j := 0; j < 3; j++ {
+        for j := range 3 {
             boxId = 3*i + j
             box := getBoxString(boxId, m, pagga, 3, 7)
             row = append(row, box)
@@ -361,14 +362,14 @@ func getCandidatesString(candidates []uint8) string {
     var rowString string
     var rowStrings []string
     var number uint8
-    for i := 0; i < 3; i++ {
+    for i:= range 3 {
         rowString = ""
-        for j := 0; j < 3; j++ {
+        for j := range 3 {
             number = uint8(3*i + j + 1)
             if len(rowString) > 0 {
                 rowString += " "
             }
-            if contains(candidates, number) {
+            if slices.Contains(candidates, number) {
                 rowString += fmt.Sprintf("%d", number)
             } else {
                 rowString += " "
@@ -378,15 +379,6 @@ func getCandidatesString(candidates []uint8) string {
     }
     cellString = lipgloss.JoinVertical(lipgloss.Left, rowStrings...)
     return cellString
-}
-
-func contains(s []uint8, e uint8) bool {
-    for _, a := range s {
-        if a == e {
-            return true
-        }
-    }
-    return false
 }
 
 func getBoxString(boxId int, m model, font asciiFont, height int, width int) string {

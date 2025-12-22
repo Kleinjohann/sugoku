@@ -133,6 +133,23 @@ func resolveRowCol(context1 Context, contextIdx1 int, context2 Context, contextI
     panic("Invalid contexts")
 }
 
+func getAllCellsSeenFromCell(row int, col int) [][]int {
+    boxRowStart, boxColumnStart := getBoxStartsFromCell(row, col)
+    var seenCells [][]int
+    for i := range 9 {
+        if i < boxRowStart || i > boxRowStart + 2 {
+            seenCells = append(seenCells, []int{i, col})
+        }
+        if i < boxColumnStart || i > boxColumnStart + 2 {
+            seenCells = append(seenCells, []int{row, i})
+        }
+        for j := range 9 {
+            seenCells = append(seenCells, []int{boxRowStart+j/3, boxColumnStart+j%3})
+        }
+    }
+    return seenCells
+}
+
 type Effect int
 
 const (
@@ -303,8 +320,8 @@ func nakedSingle(game *Sudoku) []SolutionStep {
     var steps []SolutionStep
     var candidates []uint8
     var description string
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if game.board[i][j] == 0 && game.candidatesCount[i][j] == 1 {
                 candidates = getCandidates(game, i, j)
                 description = fmt.Sprintf("r%dc%d can only be %d", i+1, j+1, candidates[0])
@@ -334,7 +351,7 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
         candidateLoop:
             for candidateIdx := range 9 {
                 count = 0
-                for cell_idx := 0; cell_idx < 9; cell_idx++ {
+                for cell_idx := range 9 {
                     row, col = getCell(context, contextIdx, cell_idx)
                     if game.board[row][col] == 0 && game.candidates[row][col][candidateIdx] {
                         count++

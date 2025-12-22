@@ -15,10 +15,10 @@ type Sudoku struct {
 
 func makeEmptySudoku() Sudoku {
     var game Sudoku
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             game.candidatesCount[i][j] = 9
-            for k := 0; k < 9; k++ {
+            for k := range 9 {
                 game.candidates[i][j][k] = true
             }
         }
@@ -40,7 +40,7 @@ func isValidSet(set []uint8) bool {
 }
 
 func isValidBoard(board [9][9]uint8) bool {
-    for i := 0; i < 9; i++ {
+    for i := range 9 {
         row := board[i][:]
 
         boxRowStart, boxColumnStart := getBoxStartsFromBoxId(i)
@@ -48,7 +48,7 @@ func isValidBoard(board [9][9]uint8) bool {
         column := make([]uint8, 9)
         box := make([]uint8, 9)
 
-        for j := 0; j < 9; j++ {
+        for j := range 9 {
             column[j] = board[j][i]
             box[j] = board[boxRowStart+j/3][boxColumnStart+j%3]
         }
@@ -114,7 +114,7 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
     var previousGame Sudoku
     // fill in 5 random cells according to the sudoku rules without checking for number of solutions
     // I'm pretty sure there cannot be a board with <5 filled cells that has 0 solutions
-    for i := 0; i < 5; i++ {
+    for range 5 {
         previousGame = game
         fillRandomCell(&game, rng)
     }
@@ -130,7 +130,8 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
             } else {
                 numSolutions, currentSolution = getNumSolutions(game)
             }
-            if numSolutions == 1 {
+            switch numSolutions {
+            case 1:
                 if !isValidUnsolvedBoard(game.board) {
                     panic("Invalid Sudoku")
                 }
@@ -151,10 +152,10 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
                     result <- game
                 }
                 return
-            } else if numSolutions == 0 {
+            case 0:
                 isRetry = true
                 game = previousGame
-            } else {
+            default:
                 previousGame = game
                 previousNumSolutions = numSolutions
                 fillRandomCell(&game, rng)
@@ -174,8 +175,8 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
     lastSolution := [9][9]uint8{}
     currentSolution := [9][9]uint8{}
 
-    for row := 0; row < 9; row++ {
-        for col := 0; col < 9; col++ {
+    for row := range 9 {
+        for col := range 9 {
             if currentGame.board[row][col] == 0 {
                 candidates = getCandidates(&currentGame, row, col)
                 currentNumSolutions = 0
@@ -243,8 +244,8 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
 }
 
 func isSolved(board [9][9]uint8) bool {
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if board[i][j] == 0 {
                 return false
             }
@@ -281,8 +282,8 @@ func getCandidates(game *Sudoku, row int, col int) []uint8 {
 func getMostConstrainedCell(game *Sudoku) (int, int) {
     minCandidates := 10
     var row, col, candidateCount int
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if game.board[i][j] == 0 {
                 candidateCount = game.candidatesCount[i][j]
                 if candidateCount < minCandidates {
@@ -314,8 +315,8 @@ func numberIsComplete(game Sudoku, number uint8) bool {
     if number == 0 {
         return false
     }
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if game.solution[i][j] == number && game.board[i][j] != number {
                 return false
             }
@@ -333,16 +334,16 @@ func selectRandomCandidate(candidates []uint8, rng *rand.Rand) (uint8, error) {
 
 func computeCandidates(game *Sudoku) {
     game.candidates = [9][9][9]bool{}
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             game.candidatesCount[i][j] = 9
-            for k := 0; k < 9; k++ {
+            for k := range 9 {
                 game.candidates[i][j][k] = true
             }
         }
     }
-    for i := 0; i < 9; i++ {
-        for j := 0; j < 9; j++ {
+    for i := range 9 {
+        for j := range 9 {
             if game.board[i][j] != 0 {
                 updateCandidates(i, j, game.board[i][j], game)
             }
@@ -355,7 +356,7 @@ func toggleCandidate(row int, col int, candidate int, game *Sudoku) {
 }
 
 func updateCandidates(changedRow int, changedColumn int, insertedValue uint8, game *Sudoku) {
-    for i := 0; i < 9; i++ {
+    for i := range 9 {
         if game.candidates[changedRow][i][insertedValue-1] {
             game.candidates[changedRow][i][insertedValue-1] = false
             game.candidatesCount[changedRow][i]--
