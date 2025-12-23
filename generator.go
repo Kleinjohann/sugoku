@@ -180,8 +180,8 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
             if currentGame.board[row][col] == 0 {
                 candidates = getCandidates(&currentGame, row, col)
                 currentNumSolutions = 0
+                previousGame = currentGame
                 for _, candidate := range candidates {
-                    previousGame = currentGame
                     currentGame.board[row][col] = candidate
                     updateCandidates(row, col, candidate, &currentGame)
                     currentSolution, err = solveSudoku(currentGame)
@@ -218,7 +218,6 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
     currentGame := game
     var row, col int
     var candidates []uint8
-    var previousGame Sudoku
 
     if isSolved(currentGame.board) {
         return currentGame.board, nil
@@ -230,14 +229,13 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
     }
     candidates = getCandidates(&currentGame, row, col)
     for _, candidate := range candidates {
-        previousGame = currentGame
         currentGame.board[row][col] = candidate
         updateCandidates(row, col, candidate, &currentGame)
         solution, err := solveSudoku(currentGame)
         if err == nil {
             return solution, nil
         }
-        game = previousGame
+        currentGame = game
     }
 
     return currentGame.board, fmt.Errorf("No solution found")
