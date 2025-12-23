@@ -90,18 +90,16 @@ func generateSudokuParallel(difficulty int, seed int, num_workers int) Sudoku {
         // avoid seed 0
         seed++
     }
-    quit := make(chan bool)
-    result := make(chan Sudoku)
     if num_workers == -1 {
         num_workers = runtime.NumCPU()
     }
+    quit := make(chan bool)
+    result := make(chan Sudoku, num_workers)
     for i := 1; i <= num_workers; i++ {
         go generateSudoku(difficulty, seed*i, quit, result)
     }
     game := <-result
-    for i := 1; i < num_workers; i++ {
-        quit <- true
-    }
+    close(quit)
     return game
 }
 
@@ -128,10 +126,14 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
             if isRetry {
                 numSolutions = previousNumSolutions
             } else {
-                numSolutions, currentSolution = getNumSolutions(game)
+                numSolutions, currentSolution = getNumSolutions(game, quit)
             }
             switch numSolutions {
             case 1:
+                select {
+                case <-quit:
+                    return
+                default:
                 if !isValidUnsolvedBoard(game.board) {
                     panic("Invalid Sudoku")
                 }
@@ -151,6 +153,7 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
                 default:
                     result <- game
                 }
+                }
                 return
             case 0:
                 isRetry = true
@@ -165,7 +168,7 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
     }
 }
 
-func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
+func getNumSolutions(game Sudoku, quit chan bool) (int, [9][9]uint8) {
     currentGame := game
     var candidates []uint8
     var err error
@@ -177,6 +180,11 @@ func getNumSolutions(game Sudoku) (int, [9][9]uint8) {
 
     for row := range 9 {
         for col := range 9 {
+            select {
+            case <-quit:
+                return 0, currentSolution
+            default:
+            }
             if currentGame.board[row][col] == 0 {
                 candidates = getCandidates(&currentGame, row, col)
                 currentNumSolutions = 0
