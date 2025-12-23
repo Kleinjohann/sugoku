@@ -39,6 +39,17 @@ func isValidSet(set []uint8) bool {
     return true
 }
 
+func isEmptyBoard(board [9][9]uint8) bool {
+    for i := range 9 {
+        for j := range 9 {
+            if board[i][j] != 0 {
+                return false
+            }
+        }
+    }
+    return true
+}
+
 func isValidBoard(board [9][9]uint8) bool {
     for i := range 9 {
         row := board[i][:]

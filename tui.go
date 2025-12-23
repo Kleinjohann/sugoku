@@ -4,6 +4,7 @@ import (
     "fmt"
     "os"
     "slices"
+    "time"
 
     "github.com/charmbracelet/bubbles/help"
     "github.com/charmbracelet/bubbles/key"
@@ -42,6 +43,8 @@ type keyMap struct {
     WipeCandidates    key.Binding
     ToggleTips        key.Binding
     ApplyTips         key.Binding
+    SaveGame          key.Binding
+    SaveEmptyGame     key.Binding
     NewGame           key.Binding
     Quit              key.Binding
 }
@@ -107,6 +110,14 @@ var keys = keyMap{
         key.WithKeys("T"),
         key.WithHelp("T", "apply tips"),
     ),
+    SaveGame: key.NewBinding(
+        key.WithKeys("s"),
+        key.WithHelp("s", "save game"),
+    ),
+    SaveEmptyGame: key.NewBinding(
+        key.WithKeys("S"),
+        key.WithHelp("S", "save original game without progress"),
+    ),
     NewGame: key.NewBinding(
         key.WithKeys("n"),
         key.WithHelp("n", "new game"),
@@ -127,7 +138,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
             k.Up3, k.Down3, k.Left3, k.Right3,
             k.Number, k.Candidate, k.Delete,
             k.ComputeCandidates, k.WipeCandidates,
-            k.ToggleTips, k.NewGame, k.Quit},
+            k.ToggleTips, k.ApplyTips, k.SaveGame,
+            k.SaveEmptyGame, k.NewGame, k.Quit},
     }
 }
 
@@ -141,13 +153,14 @@ var completedNumberForeground = lipgloss.Color("2")
 var editableForeground = lipgloss.Color("4")
 var uneditableForeground = lipgloss.Color("15")
 
-func initialModel(difficulty int, seed int, cores int) model {
-    game := generateSudokuParallel(difficulty, seed, cores)
-    editable := [9][9]bool{}
-    for i := range 9 {
-        for j := range 9 {
-            if game.board[i][j] == 0 {
-                editable[i][j] = true
+func initialModel(game Sudoku, editable [9][9]bool, difficulty int, cores int) model {
+    if isEmptyBoard(game.board) {
+        game = generateSudokuParallel(difficulty, -1, cores)
+        for i := range 9 {
+            for j := range 9 {
+                if game.board[i][j] == 0 {
+                    editable[i][j] = true
+                }
             }
         }
     }
@@ -186,7 +199,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             return m, tea.Quit
 
         case key.Matches(msg, keys.NewGame):
-            return initialModel(m.difficulty, -1, m.cores), nil
+            return initialModel(makeEmptySudoku(),
+                                [9][9]bool{},
+                                m.difficulty,
+                                m.cores), nil
+
+        case key.Matches(msg, keys.SaveGame):
+            currentTime := time.Now()
+            saveSudoku(fmt.Sprintf("archive/%d%d%d-%d%d-%d.csv",
+                                   currentTime.Year(),
+                                   currentTime.Month(),
+                                   currentTime.Day(),
+                                   currentTime.Hour(),
+                                   currentTime.Minute(),
+                                   currentTime.Second()),
+                       m.game,
+                       m.editable)
+
+        case key.Matches(msg, keys.SaveEmptyGame):
+            currentTime := time.Now()
+            emptyGame := makeEmptySudoku()
+            emptyEditable := [9][9]bool{}
+            for i := range 9 {
+                for j := range 9 {
+                    if !m.editable[i][j] {
+                        emptyGame.board[i][j] = m.game.board[i][j]
+                    } else {
+                        emptyEditable[i][j] = true
+                    }
+                }
+            }
+            saveSudoku(fmt.Sprintf("archive/%d%d%d-%d%d-%d.csv",
+                                   currentTime.Year(),
+                                   currentTime.Month(),
+                                   currentTime.Day(),
+                                   currentTime.Hour(),
+                                   currentTime.Minute(),
+                                   currentTime.Second()),
+                       emptyGame,
+                       emptyEditable)
 
         case key.Matches(msg, keys.Up):
             m.cursor[0] = (m.cursor[0] - 1 + 9) % 9
@@ -471,8 +522,8 @@ func toggleTips(m *model) {
     }
 }
 
-func runTui(difficulty int, seed int, cores int) {
-    p := tea.NewProgram(initialModel(difficulty, seed, cores))
+func runTui(game Sudoku, editable [9][9]bool, difficulty int, cores int) {
+    p := tea.NewProgram(initialModel(game, editable, difficulty, cores))
     if _, err := p.Run(); err != nil {
         fmt.Printf("Error: %v", err)
         os.Exit(1)

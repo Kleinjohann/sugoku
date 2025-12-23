@@ -58,12 +58,11 @@ func printBoard(board [9][9]uint8) {
     fmt.Println(builder.String())
 }
 
-func runPrint(difficulty int, seed int, cores int) {
-    sudoku := generateSudokuParallel(difficulty, seed, cores)
+func runPrint(game Sudoku) {
     println("Generated Sudoku:")
-    printBoard(sudoku.board)
+    printBoard(game.board)
     println("Solution:")
-    printBoard(sudoku.solution)
+    printBoard(game.solution)
 }
 
 func main() {
@@ -73,10 +72,11 @@ func main() {
         seed       = flag.Int("seed", -1, "seed for random number generator, -1 for random seed")
         cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
         difficulty = flag.Int("difficulty", 0, "difficulty of the generated sudoku, 0 for random difficulty (default 0)")
+        load       = flag.String("load", "", "load a sudoku from a file")
     )
     flag.Usage = func() {
         fmt.Fprintf(flag.CommandLine.Output(),
-            "Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>]\n")
+            "Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>]\n")
         flag.PrintDefaults()
     }
     flag.Parse()
@@ -94,14 +94,29 @@ func main() {
     }
 
     if !slices.Contains(validDifficulties, *difficulty) {
-        log.Fatal("difficulty must be between 0 and 3")
+        log.Fatalf("difficulty must be between 0 and %d", len(validDifficulties)-1)
     } else if *difficulty == 0 {
         *difficulty = validDifficulties[rand.IntN(len(validDifficulties)-1)+1]
     }
 
-    if *print {
-        runPrint(*difficulty, *seed, *cores)
+    var game Sudoku
+    var editable [9][9]bool
+    if *load != "" {
+        game, editable = loadSudoku(*load)
     } else {
-        runTui(*difficulty, *seed, *cores)
+        game = generateSudokuParallel(*difficulty, *seed, *cores)
+        for i := range 9 {
+            for j := range 9 {
+                if game.board[i][j] == 0 {
+                    editable[i][j] = true
+                }
+            }
+        }
+    }
+
+    if *print {
+        runPrint(game)
+    } else {
+        runTui(game, editable, *difficulty, *cores)
     }
 }
