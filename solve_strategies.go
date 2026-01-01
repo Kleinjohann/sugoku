@@ -849,14 +849,14 @@ var xWing = SolveStrategy{
 var swordfish = SolveStrategy{
 	name:       "Swordfish",
 	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyBasicFish(game, 3, strategy) },
-	difficulty: 4,
+	difficulty: 5,
 	effectType: RemoveCandidate,
 }
 
 var jellyfish = SolveStrategy{
 	name:       "Jellyfish",
 	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyBasicFish(game, 4, strategy) },
-	difficulty: 4,
+	difficulty: 5,
 	effectType: RemoveCandidate,
 }
 
@@ -963,7 +963,7 @@ var skyscraper = SolveStrategy{
 	effectType: RemoveCandidate,
 }
 
-func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
+func applyXYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	// find cells with candidates XY, XZ, YZ
 	// where XY sees XZ and YZ, but XZ does not see YZ
 	// effect: remove Z as candidates from all cells that see both XZ and YZ
@@ -1025,6 +1025,13 @@ func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 								if !slices.Contains(getCandidates(game, currentTargetCell[0], currentTargetCell[1]), z) {
 									continue
 								}
+								if isDuplicateEffect(
+									steps,
+									currentTargetCell[0],
+									currentTargetCell[1],
+									z) {
+									continue
+								}
 								targetCells = append(targetCells, currentTargetCell)
 								targetValues = append(targetValues, z)
 							}
@@ -1037,6 +1044,7 @@ func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 							description = fmt.Sprintf("%d cannot be in cells", z)
 							for _, currentTargetCell = range targetCells {
 								description += fmt.Sprintf(" row %d col %d", currentTargetCell[0]+1, currentTargetCell[1]+1)
+							}
 							description += fmt.Sprintf(
 								"\n\t(anchor: row %d col %d, arms: row %d col %d, row %d col %d)",
 								anchorRow+1,
@@ -1045,7 +1053,6 @@ func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 								otherCol+1,
 								thirdCell[0]+1,
 								thirdCell[1]+1)
-							}
 							steps = append(steps, SolutionStep{
 								strategy:      strategy,
 								strategyName:  strategy.name,
@@ -1066,9 +1073,131 @@ func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	return steps
 }
 
-var yWing = SolveStrategy{
-	name:       "Y-Wing",
-	apply:      applyYWing,
+var xyWing = SolveStrategy{
+	name:       "XY-Wing",
+	apply:      applyXYWing,
+	difficulty: 4,
+	effectType: RemoveCandidate,
+}
+
+func applyXYZWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
+	// find cells with candidates XYZ, XZ, YZ
+	// where XYZ sees XZ and YZ, but XZ does not see YZ
+	// effect: remove Z as candidates from all cells that see XYZ, XZ and YZ
+	var steps []SolutionStep
+	var y, z uint8
+	var anchorCellIdx, firstArmCellIdx, secondArmCellIdx, firstArmRow, firstArmCol, anchorRow, anchorCol int
+	contexts := []Context{Row, Column}
+	var description string
+	var currentTargetCell []int
+	var contextCandidates map[int][]uint8
+	var seenCells, currentTargetCells, targetCells [][]int
+	var secondArmCandidates, anchorCandidates, firstArmCandidates, targetValues []uint8
+	var targetCandidates [][]uint8
+	for _, context := range contexts {
+		for contextIdx := range 9 {
+			contextCandidates = getContextCandidates(game, context, contextIdx)
+			numCells := len(contextCandidates)
+			if numCells < 2 {
+				continue
+			}
+			keys := maps.Keys(contextCandidates)
+			for _, anchorKey := range keys {
+				anchorCandidates = contextCandidates[anchorKey]
+				if len(anchorCandidates) != 3 {
+					continue
+				}
+				for _, firstArmKey := range keys {
+					firstArmCandidates = contextCandidates[firstArmKey]
+					if len(firstArmCandidates) != 2 {
+						continue
+					}
+					if !isSuperset(anchorCandidates, firstArmCandidates) {
+						continue
+					}
+					anchorRow, anchorCol = getCell(context, contextIdx, anchorKey)
+					firstArmRow, firstArmCol = getCell(context, contextIdx, firstArmKey)
+					y = getFirstNonMatchingElement(anchorCandidates, firstArmCandidates)
+					targetCandidates = [][]uint8{{y, firstArmCandidates[0]}, {y, firstArmCandidates[1]}}
+					slices.Sort(targetCandidates[0])
+					slices.Sort(targetCandidates[1])
+					seenCells = getAllCellsSeenFromCell(anchorRow, anchorCol)
+					for _, secondArmCell := range seenCells {
+						secondArmCandidates = getCandidates(game, secondArmCell[0], secondArmCell[1])
+						if game.board[secondArmCell[0]][secondArmCell[1]] != 0 {
+							continue
+						}
+						if !(slices.Equal(secondArmCandidates, targetCandidates[0]) || slices.Equal(secondArmCandidates, targetCandidates[1])) {
+							continue
+						}
+						z = intersect(firstArmCandidates, secondArmCandidates)[0]
+						currentTargetCells = getAllCellsSeenFromCells(
+							[][]int{
+								{anchorRow, anchorCol},
+								{firstArmRow, firstArmCol},
+								secondArmCell})
+						targetCells = [][]int{}
+						targetValues = []uint8{}
+						for _, currentTargetCell = range currentTargetCells {
+							if game.board[currentTargetCell[0]][currentTargetCell[1]] != 0 {
+								continue
+							}
+							if !slices.Contains(getCandidates(game, currentTargetCell[0], currentTargetCell[1]), z) {
+								continue
+							}
+							if isDuplicateEffect(
+								steps,
+								currentTargetCell[0],
+								currentTargetCell[1],
+								z) {
+								continue
+							}
+							targetCells = append(targetCells, currentTargetCell)
+							targetValues = append(targetValues, z)
+						}
+						if len(targetCells) == 0 {
+							continue
+						}
+						anchorCellIdx = getContextIdx(Cell, anchorRow, anchorCol)
+						firstArmCellIdx = getContextIdx(Cell, firstArmRow, firstArmCol)
+						secondArmCellIdx = getContextIdx(
+							Cell,
+							secondArmCell[0],
+							secondArmCell[1])
+						description = fmt.Sprintf("%d cannot be in cells", z)
+						for _, currentTargetCell = range targetCells {
+							description += fmt.Sprintf(" row %d col %d", currentTargetCell[0]+1, currentTargetCell[1]+1)
+							description += fmt.Sprintf(
+								"\n\t(anchor: row %d col %d, arms: row %d col %d, row %d col %d)",
+								anchorRow+1,
+								anchorCol+1,
+								firstArmRow+1,
+								firstArmCol+1,
+								secondArmCell[0]+1,
+								secondArmCell[1]+1)
+						}
+						steps = append(steps, SolutionStep{
+							strategy:      strategy,
+							strategyName:  strategy.name,
+							description:   description,
+							sourceContext: Cell,
+							sourceIndices: []int{anchorCellIdx, firstArmCellIdx, secondArmCellIdx},
+							targetCells:   targetCells,
+							targetValues:  targetValues,
+							effectType:    strategy.effectType,
+							difficulty:    strategy.difficulty,
+						})
+					}
+				}
+			}
+		}
+	}
+	return steps
+}
+
+var xyzWing = SolveStrategy{
+	name:       "XYZ-Wing",
+	apply:      applyXYZWing,
 	difficulty: 5,
 	effectType: RemoveCandidate,
 }
@@ -1088,7 +1217,8 @@ var solveStrategies = []SolveStrategy{
 	swordfish,
 	jellyfish,
 	skyscraper,
-	yWing,
+	xyWing,
+	xyzWing,
 }
 
 func getStrategy(name string) SolveStrategy {
