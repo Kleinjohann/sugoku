@@ -165,25 +165,25 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
 				case <-quit:
 					return
 				default:
-					if !isValidUnsolvedBoard(game.board) {
-						panic("Invalid Sudoku")
-					}
-					game.solution = currentSolution
-					if !isValidSolvedBoard(game.solution) {
-						panic("Invalid Solution")
-					}
-					currentDifficulty = rateDifficulty(&game)
-					if currentDifficulty != difficulty {
-						generateSudoku(difficulty, seed+rng.Int(), quit, result)
-					}
-					// for easy difficulties there can be a race condition,
-					// so we need another select statement here
-					select {
-					case <-quit:
-						return
-					default:
-						result <- game
-					}
+				}
+				if !isValidUnsolvedBoard(game.board) {
+					panic("Invalid Sudoku")
+				}
+				game.solution = currentSolution
+				if !isValidSolvedBoard(game.solution) {
+					panic("Invalid Solution")
+				}
+				currentDifficulty = rateDifficulty(&game)
+				if currentDifficulty != difficulty {
+					generateSudoku(difficulty, seed+rng.Int(), quit, result)
+				}
+				// for easy difficulties there can be a race condition,
+				// so we need another select statement here
+				select {
+				case <-quit:
+					return
+				default:
+					result <- game
 				}
 				return
 			case 0:
@@ -238,30 +238,30 @@ func generateStrategyExercise(strategyName string, seed int, quit chan bool, res
 				case <-quit:
 					return
 				default:
-					if !isValidUnsolvedBoard(game.board) {
-						panic("Invalid Sudoku")
-					}
-					game.solution = currentSolution
-					if !isValidSolvedBoard(game.solution) {
-						panic("Invalid Solution")
-					}
-					steps, indices, err := getSolutionInvolvingStrategy(&game, strategy)
-					if err != nil {
-						generateStrategyExercise(strategyName, seed+rng.Int(), quit, result)
-					}
-					exercise := StrategyExercise{
-						strategy: strategy,
-						game:     &game,
-						steps:    steps,
-						indices:  indices}
-					// for easy strategies there can be a race condition,
-					// so we need another select statement here
-					select {
-					case <-quit:
-						return
-					default:
-						result <- exercise
-					}
+				}
+				if !isValidUnsolvedBoard(game.board) {
+					panic("Invalid Sudoku")
+				}
+				game.solution = currentSolution
+				if !isValidSolvedBoard(game.solution) {
+					panic("Invalid Solution")
+				}
+				steps, indices, err := getSolutionInvolvingStrategy(&game, strategy)
+				if err != nil {
+					generateStrategyExercise(strategyName, seed+rng.Int(), quit, result)
+				}
+				exercise := StrategyExercise{
+					strategy: strategy,
+					game:     &game,
+					steps:    steps,
+					indices:  indices}
+				// for easy strategies there can be a race condition,
+				// so we need another select statement here
+				select {
+				case <-quit:
+					return
+				default:
+					result <- exercise
 				}
 				return
 			case 0:
@@ -299,9 +299,14 @@ func getNumSolutions(game Sudoku, quit chan bool) (int, [9][9]uint8) {
 				currentNumSolutions = 0
 				previousGame = currentGame
 				for _, candidate := range candidates {
+					select {
+					case <-quit:
+						return 0, currentSolution
+					default:
+					}
 					currentGame.board[row][col] = candidate
 					updateCandidates(row, col, candidate, &currentGame)
-					currentSolution, err = solveSudoku(currentGame)
+					currentSolution, err = solveSudoku(currentGame, quit)
 					if err == nil {
 						currentNumSolutions++
 						if currentSolution != lastSolution {
@@ -331,7 +336,7 @@ func getNumSolutions(game Sudoku, quit chan bool) (int, [9][9]uint8) {
 	return numSolutions, currentSolution
 }
 
-func solveSudoku(game Sudoku) ([9][9]uint8, error) {
+func solveSudoku(game Sudoku, quit chan bool) ([9][9]uint8, error) {
 	currentGame := game
 	var row, col int
 	var candidates []uint8
@@ -346,9 +351,14 @@ func solveSudoku(game Sudoku) ([9][9]uint8, error) {
 	}
 	candidates = getCandidates(&currentGame, row, col)
 	for _, candidate := range candidates {
+		select {
+		case <-quit:
+			return currentGame.board, fmt.Errorf("No solution found")
+		default:
+		}
 		currentGame.board[row][col] = candidate
 		updateCandidates(row, col, candidate, &currentGame)
-		solution, err := solveSudoku(currentGame)
+		solution, err := solveSudoku(currentGame, quit)
 		if err == nil {
 			return solution, nil
 		}
