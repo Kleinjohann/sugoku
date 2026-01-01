@@ -21,26 +21,31 @@ Note that this will install the program in your `$GOPATH/bin` directory. Make su
 ## Usage
 
 ```
-sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>]
-  -difficulty int
-        difficulty of the generated sudoku, 0 for random difficulty (default 0)
-  -print
-        print a generated sudoku and its solution and exit
+Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>] [-exercise <strategy>]
   -cores int
         number of cores to use, -1 for all cores (default -1)
-  -seed int
-        seed for random number generator, -1 for random seed (default -1)
   -cpuprofile file
         write cpu profile to file
+  -difficulty int
+        difficulty of the generated sudoku, 0 for random difficulty (default 0)
+  -exercise string
+        generate an exercise for the given strategy
+  -load string
+        load a sudoku from a file
+  -print
+        print a generated sudoku and its solution and exit
+  -seed int
+        seed for random number generator, -1 for random seed (default -1)
 ```
 
 A puzzle's difficulty is given by the difficulty of the hardest strategy required to solve it.
-The exact strategy difficulty mapping is as follows (bracketed strategies are not implemented yet):
+The exact strategy difficulty mapping is as follows:
 1. Naked Single, Hidden Single
 2. Naked Pair, Naked Triple, Naked Quad, Pointing Group, Box Reduction
 3. Hidden Pair, Hidden Triple, Hidden Quad
-4. X-Wing, Swordfish, Jellyfish, Skyscraper, (Y-Wing)
-5. Not solvable using all of the above
+4. X-Wing, XY-Wing
+5. Swordfish, Jellyfish, Skyscraper, XYZ-Wing
+6. Not solvable using all of the above
 
 Note that puzzles of difficulty >= 4 are quite rare and may take a while to generate.
 
@@ -49,7 +54,7 @@ Otherwise, you are presented with a TUI to solve a randomly generated Sudoku puz
 
 Example screenshot of the TUI:
 
-![](/images/tui.png)
+![](images/tui.png)
 
 Example output of `sugoku --print`:
 
@@ -100,6 +105,8 @@ Solution:
 
 ## Planned Improvements
 
+- Improve UX for saving, loading and for exercises
+- Build a main menu for the TUI, move CLI parameters to menu options
 - Implement more solving strategies
 - Improve the TUI
     - Allow selection of multiple cells to enter multiple candidates at once
