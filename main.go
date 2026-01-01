@@ -72,8 +72,8 @@ func main() {
 		seed       = flag.Int("seed", -1, "seed for random number generator, -1 for random seed")
 		cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
 		difficulty = flag.Int("difficulty", 0, "difficulty of the generated sudoku, 0 for random difficulty (default 0)")
-		load       = flag.String("load", "", "load a sudoku from a file")
-		exercise   = flag.String("exercise", "", "generate an exercise for the given strategy")
+		load       = flag.String("load", "", "load a sudoku from `file`")
+		exercise   = flag.String("exercise", "", "generate an exercise for `strategy`")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
