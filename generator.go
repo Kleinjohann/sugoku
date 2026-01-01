@@ -114,6 +114,26 @@ func generateSudokuParallel(difficulty int, seed int, num_workers int) Sudoku {
 	return game
 }
 
+func generateStrategyExerciseParallel(strategyName string, seed int, num_workers int) StrategyExercise {
+	if seed == -1 {
+		seed = rand.Int()
+	} else {
+		// avoid seed 0
+		seed++
+	}
+	if num_workers == -1 {
+		num_workers = runtime.NumCPU()
+	}
+	quit := make(chan bool)
+	result := make(chan StrategyExercise, num_workers)
+	for i := 1; i <= num_workers; i++ {
+		go generateStrategyExercise(strategyName, seed*i, quit, result)
+	}
+	exercise := <-result
+	close(quit)
+	return exercise
+}
+
 func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku) {
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)))
 	game := makeEmptySudoku()
@@ -163,6 +183,84 @@ func generateSudoku(difficulty int, seed int, quit chan bool, result chan Sudoku
 						return
 					default:
 						result <- game
+					}
+				}
+				return
+			case 0:
+				isRetry = true
+				game = previousGame
+			default:
+				previousGame = game
+				previousNumSolutions = numSolutions
+				fillRandomCell(&game, rng)
+				isRetry = false
+			}
+		}
+	}
+}
+
+type StrategyExercise struct {
+	strategy SolveStrategy
+	game     *Sudoku
+	steps    []SolutionStep
+	indices  []int
+}
+
+func generateStrategyExercise(strategyName string, seed int, quit chan bool, result chan StrategyExercise) {
+	strategy := getStrategy(strategyName)
+	rng := rand.New(rand.NewPCG(uint64(seed), uint64(seed)))
+	game := makeEmptySudoku()
+	var currentSolution [9][9]uint8
+	var numSolutions int
+	previousNumSolutions := 2
+	var previousGame Sudoku
+	// fill in 5 random cells according to the sudoku rules without checking for number of solutions
+	// I'm pretty sure there cannot be a board with <5 filled cells that has 0 solutions
+	for range 5 {
+		previousGame = game
+		fillRandomCell(&game, rng)
+	}
+	// now start checking for number of solutions
+	isRetry := false
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+			if isRetry {
+				numSolutions = previousNumSolutions
+			} else {
+				numSolutions, currentSolution = getNumSolutions(game, quit)
+			}
+			switch numSolutions {
+			case 1:
+				select {
+				case <-quit:
+					return
+				default:
+					if !isValidUnsolvedBoard(game.board) {
+						panic("Invalid Sudoku")
+					}
+					game.solution = currentSolution
+					if !isValidSolvedBoard(game.solution) {
+						panic("Invalid Solution")
+					}
+					steps, indices, err := getSolutionInvolvingStrategy(&game, strategy)
+					if err != nil {
+						generateStrategyExercise(strategyName, seed+rng.Int(), quit, result)
+					}
+					exercise := StrategyExercise{
+						strategy: strategy,
+						game:     &game,
+						steps:    steps,
+						indices:  indices}
+					// for easy strategies there can be a race condition,
+					// so we need another select statement here
+					select {
+					case <-quit:
+						return
+					default:
+						result <- exercise
 					}
 				}
 				return

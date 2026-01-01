@@ -180,6 +180,39 @@ func initialModel(game Sudoku, editable [9][9]bool, difficulty int, cores int) m
 	return m
 }
 
+func exerciseModel(strategyName string, cores int) model {
+	var editable [9][9]bool
+	exercise := generateStrategyExerciseParallel(strategyName, -1, cores)
+	game := exercise.game
+	firstIdx := exercise.indices[0]
+	computeCandidates(game)
+	for i := range 9 {
+		for j := range 9 {
+			if game.board[i][j] == 0 {
+				editable[i][j] = true
+			}
+		}
+	}
+	for _, step := range exercise.steps[:firstIdx] {
+		step.Apply(game)
+	}
+	tipsGame := game
+	m := model{
+		game:       *game,
+		tipsGame:   *tipsGame,
+		editable:   editable,
+		difficulty: exercise.strategy.difficulty,
+		strategies: exercise.steps[firstIdx:],
+		cursor:     [2]int{4, 4},
+		keys:       keys,
+		help:       help.New(),
+		cores:      cores,
+	}
+	m.help.ShowAll = true
+	updateTipsString(&m)
+	return m
+}
+
 func (m model) Init() tea.Cmd {
 	return nil
 }
@@ -489,11 +522,11 @@ func updateTipsString(m *model) {
 		m.tips = "You made a mistake!"
 		return
 	}
-	for strategy := range solveStrategies {
-		steps := solveStrategies[strategy](&m.tipsGame)
+	for _, strategy := range solveStrategies {
+		steps := strategy.Apply(&m.tipsGame)
 		if len(steps) > 0 {
 			m.strategies = steps
-			m.tips = steps[0].strategy + ":\n"
+			m.tips = steps[0].strategyName + ":\n"
 			for step := range steps {
 				m.tips += fmt.Sprintf("%s\n", steps[step].description)
 			}
@@ -524,6 +557,14 @@ func toggleTips(m *model) {
 
 func runTui(game Sudoku, editable [9][9]bool, difficulty int, cores int) {
 	p := tea.NewProgram(initialModel(game, editable, difficulty, cores))
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
+	}
+}
+
+func runExercise(strategyName string, cores int) {
+	p := tea.NewProgram(exerciseModel(strategyName, cores))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)

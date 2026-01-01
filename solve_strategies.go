@@ -143,9 +143,33 @@ func getAllCellsSeenFromCell(row int, col int) [][]int {
 		if i < boxColumnStart || i > boxColumnStart+2 {
 			seenCells = append(seenCells, []int{row, i})
 		}
-		for j := range 9 {
-			seenCells = append(seenCells, []int{boxRowStart + j/3, boxColumnStart + j%3})
+		if boxRowStart+i/3 == row && boxColumnStart+i%3 == col {
+			continue
 		}
+		seenCells = append(seenCells, []int{boxRowStart + i/3, boxColumnStart + i%3})
+	}
+	return seenCells
+}
+
+func getAllCellsSeenFromCells(cells [][]int) [][]int {
+	var seenCells, cellsSeenFromSingleCell [][]int
+	var otherCells []int
+	var currentRowCol, currentCell []int
+	var idx, currentCellIdx int
+	for idx, currentCell = range cells {
+		cellsSeenFromSingleCell = append(cellsSeenFromSingleCell, []int{})
+		for _, currentRowCol = range getAllCellsSeenFromCell(currentCell[0], currentCell[1]) {
+			cellsSeenFromSingleCell[idx] = append(cellsSeenFromSingleCell[idx], getContextIdx(Cell, currentRowCol[0], currentRowCol[1]))
+		}
+	}
+outerLoop:
+	for _, currentCellIdx = range cellsSeenFromSingleCell[0] {
+		for _, otherCells = range cellsSeenFromSingleCell[1:] {
+			if !slices.Contains(otherCells, currentCellIdx) {
+				continue outerLoop
+			}
+		}
+		seenCells = append(seenCells, []int{currentCellIdx / 9, currentCellIdx % 9})
 	}
 	return seenCells
 }
@@ -158,13 +182,15 @@ const (
 )
 
 type SolutionStep struct {
-	strategy      string
+	strategy      *SolveStrategy
+	strategyName  string
 	description   string
 	sourceContext Context
 	sourceIndices []int
 	targetCells   [][]int
 	targetValues  []uint8
 	effectType    Effect
+	difficulty    int
 }
 
 func (step SolutionStep) Apply(game *Sudoku) {
@@ -217,6 +243,25 @@ func isSuperset[Int constraints.Integer](setA []Int, setB []Int) bool {
 		}
 	}
 	return true
+}
+
+func intersect[Int constraints.Integer](setA []Int, setB []Int) []Int {
+	var commonElements []Int
+	for _, item := range setB {
+		if slices.Contains(setA, item) {
+			commonElements = append(commonElements, item)
+		}
+	}
+	return commonElements
+}
+
+func getFirstNonMatchingElement[Int constraints.Integer](setA []Int, setB []Int) Int {
+	for _, item := range setA {
+		if !slices.Contains(setB, item) {
+			return item
+		}
+	}
+	panic("No non-matching elements")
 }
 
 func getContextPossibilitiesByCandidate(game *Sudoku, context Context, contextIdx int) map[uint8][]int {
@@ -314,9 +359,22 @@ func findSets[keyType constraints.Integer, valueType constraints.Integer](candid
 	return setIndices
 }
 
-type SolveStrategy func(*Sudoku) []SolutionStep
+type SolveStrategy struct {
+	apply      func(*Sudoku, *SolveStrategy) []SolutionStep
+	name       string
+	difficulty int
+	effectType Effect
+}
 
-func nakedSingle(game *Sudoku) []SolutionStep {
+func (strategy SolveStrategy) Apply(game *Sudoku) []SolutionStep {
+	return strategy.apply(game, &strategy)
+}
+
+func (strategy SolveStrategy) Equal(otherStrategy SolveStrategy) bool {
+	return strategy.name == otherStrategy.name
+}
+
+func applyNakedSingle(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var candidates []uint8
 	var description string
@@ -326,13 +384,15 @@ func nakedSingle(game *Sudoku) []SolutionStep {
 				candidates = getCandidates(game, i, j)
 				description = fmt.Sprintf("r%dc%d can only be %d", i+1, j+1, candidates[0])
 				steps = append(steps, SolutionStep{
-					strategy:      "Naked Single",
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: Cell,
 					sourceIndices: []int{9*i + j},
 					targetCells:   [][]int{{i, j}},
 					targetValues:  []uint8{candidates[0]},
-					effectType:    PlaceNumber,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
@@ -340,37 +400,40 @@ func nakedSingle(game *Sudoku) []SolutionStep {
 	return steps
 }
 
-func hiddenSingle(game *Sudoku) []SolutionStep {
+var nakedSingle = SolveStrategy{
+	name:       "Naked Single",
+	apply:      applyNakedSingle,
+	difficulty: 1,
+	effectType: PlaceNumber,
+}
+
+func applyHiddenSingle(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
-	var description string
+	var description, contextStr string
 	var row, col int
-	var count, lastIdx int
+	var count, lastIdx, contextIdx, cellIdx, candidateIdx int
+	var number uint8
 	var context Context
 	for _, context = range []Context{Row, Column, Box} {
-		for contextIdx := range 9 {
+		for contextIdx = range 9 {
 		candidateLoop:
-			for candidateIdx := range 9 {
+			for candidateIdx = range 9 {
 				count = 0
-				for cell_idx := range 9 {
-					row, col = getCell(context, contextIdx, cell_idx)
+				for cellIdx = range 9 {
+					row, col = getCell(context, contextIdx, cellIdx)
 					if game.board[row][col] == 0 && game.candidates[row][col][candidateIdx] {
 						count++
-						lastIdx = cell_idx
+						lastIdx = cellIdx
 					}
 				}
 				if count == 1 {
-					contextStr := context.String()
 					row, col = getCell(context, contextIdx, lastIdx)
-					number := uint8(candidateIdx + 1)
+					number = uint8(candidateIdx + 1)
 
-					for _, step := range steps {
-						// avoid steps with duplicate effects
-						if step.targetCells[0][0] == row &&
-							step.targetCells[0][1] == col &&
-							step.targetValues[0] == number {
-							continue candidateLoop
-						}
+					if isDuplicateEffect(steps, row, col, number) {
+						continue candidateLoop
 					}
+					contextStr = context.String()
 					description = fmt.Sprintf("%d can only go in r%dc%d in %s %d",
 						number,
 						row+1,
@@ -378,13 +441,14 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
 						contextStr,
 						contextIdx+1)
 					steps = append(steps, SolutionStep{
-						strategy:      "Hidden Single",
+						strategy:      strategy,
+						strategyName:  strategy.name,
 						description:   description,
 						sourceContext: context,
 						sourceIndices: []int{contextIdx},
 						targetCells:   [][]int{{row, col}},
 						targetValues:  []uint8{number},
-						effectType:    PlaceNumber,
+						effectType:    strategy.effectType,
 					})
 				}
 			}
@@ -393,7 +457,14 @@ func hiddenSingle(game *Sudoku) []SolutionStep {
 	return steps
 }
 
-func nakedSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
+var hiddenSingle = SolveStrategy{
+	name:       "Hidden Single",
+	apply:      applyHiddenSingle,
+	difficulty: 1,
+	effectType: PlaceNumber,
+}
+
+func applyNakedSet(game *Sudoku, setSize int, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var description string
 	var row, col int
@@ -438,13 +509,14 @@ func nakedSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
 					description += fmt.Sprintf(" r%dc%d", row+1, col+1)
 				}
 				steps = append(steps, SolutionStep{
-					strategy:      strategyName,
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: context,
 					sourceIndices: []int{contextIdx},
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
 				})
 			}
 		}
@@ -452,23 +524,32 @@ func nakedSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
 	return steps
 }
 
-func nakedPair(game *Sudoku) []SolutionStep {
-	return nakedSet(game, 2, "Naked Pair")
+var nakedPair = SolveStrategy{
+	name:       "Naked Pair",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyNakedSet(game, 2, strategy) },
+	difficulty: 2,
+	effectType: RemoveCandidate,
 }
 
-func nakedTriple(game *Sudoku) []SolutionStep {
-	return nakedSet(game, 3, "Naked Triple")
+var nakedTriple = SolveStrategy{
+	name:       "Naked Triple",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyNakedSet(game, 3, strategy) },
+	difficulty: 2,
+	effectType: RemoveCandidate,
 }
 
-func nakedQuad(game *Sudoku) []SolutionStep {
-	return nakedSet(game, 4, "Naked Quad")
+var nakedQuad = SolveStrategy{
+	name:       "Naked Quad",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyNakedSet(game, 4, strategy) },
+	difficulty: 2,
+	effectType: RemoveCandidate,
 }
 
-func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
+func applyHiddenSet(game *Sudoku, setSize int, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
-	var description string
-	var row, col, cellIdx int
-	var candidate uint8
+	var contextStr, description string
+	var row, col, cellIdx, contextIdx int
+	var candidate, setCandidate uint8
 	var targetCells [][]int
 	var setIndices []int
 	var candidates, setCandidates, targetValues []uint8
@@ -476,7 +557,7 @@ func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
 	var context Context
 	var possibilities map[uint8][]int
 	for _, context = range []Context{Row, Column, Box} {
-		for contextIdx := range 9 {
+		for contextIdx = range 9 {
 			possibilities = getContextPossibilitiesByCandidate(game, context, contextIdx)
 			sets = findSets(possibilities, setSize)
 			for _, setCandidates = range sets {
@@ -500,24 +581,26 @@ func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
 				if len(targetCells) == 0 {
 					continue
 				}
-				contextStr := context.String()
+				contextStr = context.String()
 				description = fmt.Sprintf("In %s %d, ", contextStr, contextIdx+1)
-				for _, setCandidate := range setCandidates {
+				for _, setCandidate = range setCandidates {
 					description += fmt.Sprintf("%d ", setCandidate)
 				}
 				description += "can only go in"
-				for _, cellIdx := range setIndices {
+				for _, cellIdx = range setIndices {
 					row, col = getCell(context, contextIdx, cellIdx)
 					description += fmt.Sprintf(" r%dc%d", row+1, col+1)
 				}
 				steps = append(steps, SolutionStep{
-					strategy:      strategyName,
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: context,
 					sourceIndices: []int{contextIdx},
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
@@ -525,19 +608,28 @@ func hiddenSet(game *Sudoku, setSize int, strategyName string) []SolutionStep {
 	return steps
 }
 
-func hiddenPair(game *Sudoku) []SolutionStep {
-	return hiddenSet(game, 2, "Hidden Pair")
+var hiddenPair = SolveStrategy{
+	name:       "Hidden Pair",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyHiddenSet(game, 2, strategy) },
+	difficulty: 3,
+	effectType: RemoveCandidate,
 }
 
-func hiddenTriple(game *Sudoku) []SolutionStep {
-	return hiddenSet(game, 3, "Hidden Triple")
+var hiddenTriple = SolveStrategy{
+	name:       "Hidden Triple",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyHiddenSet(game, 3, strategy) },
+	difficulty: 3,
+	effectType: RemoveCandidate,
 }
 
-func hiddenQuad(game *Sudoku) []SolutionStep {
-	return hiddenSet(game, 4, "Hidden Quad")
+var hiddenQuad = SolveStrategy{
+	name:       "Hidden Quad",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyHiddenSet(game, 4, strategy) },
+	difficulty: 3,
+	effectType: RemoveCandidate,
 }
 
-func pointingGroup(game *Sudoku) []SolutionStep {
+func applyPointingGroup(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var description string
 	var sourceRow, sourceCol, row, col, boxId, targetBoxId, contextIdx int
@@ -585,13 +677,15 @@ func pointingGroup(game *Sudoku) []SolutionStep {
 					candidate,
 					boxId+1)
 				steps = append(steps, SolutionStep{
-					strategy:      "Pointing Group",
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: Box,
 					sourceIndices: []int{boxId},
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
@@ -599,7 +693,14 @@ func pointingGroup(game *Sudoku) []SolutionStep {
 	return steps
 }
 
-func boxReduction(game *Sudoku) []SolutionStep {
+var pointingGroup = SolveStrategy{
+	name:       "Pointing Group",
+	apply:      applyPointingGroup,
+	difficulty: 2,
+	effectType: RemoveCandidate,
+}
+
+func applyBoxReduction(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var description string
 	var row, col, boxId, boxRowStart, boxColStart, boxRowEnd, boxColEnd int
@@ -651,13 +752,15 @@ func boxReduction(game *Sudoku) []SolutionStep {
 					context.String(),
 					contextIdx+1)
 				steps = append(steps, SolutionStep{
-					strategy:      "Box Reduction",
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: context,
 					sourceIndices: []int{contextIdx},
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
@@ -665,7 +768,14 @@ func boxReduction(game *Sudoku) []SolutionStep {
 	return steps
 }
 
-func basicFish(game *Sudoku, fishSize int, strategyName string) []SolutionStep {
+var boxReduction = SolveStrategy{
+	name:       "Box Reduction",
+	apply:      applyBoxReduction,
+	difficulty: 2,
+	effectType: RemoveCandidate,
+}
+
+func applyBasicFish(game *Sudoku, fishSize int, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var candidate uint8
 	contexts := []Context{Row, Column}
@@ -713,13 +823,15 @@ func basicFish(game *Sudoku, fishSize int, strategyName string) []SolutionStep {
 					description += fmt.Sprintf(" %d", contextIdx+1)
 				}
 				steps = append(steps, SolutionStep{
-					strategy:      strategyName,
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: context,
 					sourceIndices: contextIndices,
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
@@ -727,31 +839,40 @@ func basicFish(game *Sudoku, fishSize int, strategyName string) []SolutionStep {
 	return steps
 }
 
-func xWing(game *Sudoku) []SolutionStep {
-	return basicFish(game, 2, "X-Wing")
+var xWing = SolveStrategy{
+	name:       "X-Wing",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyBasicFish(game, 2, strategy) },
+	difficulty: 4,
+	effectType: RemoveCandidate,
 }
 
-func swordfish(game *Sudoku) []SolutionStep {
-	return basicFish(game, 3, "Swordfish")
+var swordfish = SolveStrategy{
+	name:       "Swordfish",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyBasicFish(game, 3, strategy) },
+	difficulty: 4,
+	effectType: RemoveCandidate,
 }
 
-func jellyfish(game *Sudoku) []SolutionStep {
-	return basicFish(game, 4, "Jellyfish")
+var jellyfish = SolveStrategy{
+	name:       "Jellyfish",
+	apply:      func(game *Sudoku, strategy *SolveStrategy) []SolutionStep { return applyBasicFish(game, 4, strategy) },
+	difficulty: 4,
+	effectType: RemoveCandidate,
 }
 
-func skyscraper(game *Sudoku) []SolutionStep {
+func applySkyscraper(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 	var steps []SolutionStep
 	var candidate uint8
 	contexts := []Context{Row, Column}
-	var contextIndices, otherContextIndices []int
+	var contextIndices, otherContextIndices, skyscraperTop []int
 	var description string
-	var otherContext Context
-	var contextIdx, otherContextIdx, cellIdx, row, col int
+	var context, otherContext Context
+	var i, contextIdx, otherContextIdx, cellIdx, row, col int
 	var otherPossibilities []int
 	var possibilities map[int][]int
 	var skyscraperTops, sourceCells, targetCells [][]int
 	var targetValues []uint8
-	for i, context := range contexts {
+	for i, context = range contexts {
 		otherContext = contexts[(i+1)%2]
 		for candidate = 1; candidate <= 9; candidate++ {
 			possibilities = getCandidatePossibilitiesByContextIdx(game, context, candidate)
@@ -762,7 +883,7 @@ func skyscraper(game *Sudoku) []SolutionStep {
 				}
 			}
 		contextIdxLoop:
-			for _, contextIdx := range contextIndices {
+			for _, contextIdx = range contextIndices {
 				otherContextIndices = possibilities[contextIdx]
 				skyscraperTops = [][]int{}
 				for _, otherContextIdx = range otherContextIndices {
@@ -784,7 +905,7 @@ func skyscraper(game *Sudoku) []SolutionStep {
 				targetCells = [][]int{}
 				targetValues = []uint8{}
 				sourceCells = [][]int{}
-				for _, skyscraperTop := range skyscraperTops {
+				for _, skyscraperTop = range skyscraperTops {
 					row, col = resolveRowCol(context, skyscraperTop[0], otherContext, skyscraperTop[1])
 					sourceCells = append(sourceCells, []int{row, col})
 				}
@@ -819,18 +940,137 @@ func skyscraper(game *Sudoku) []SolutionStep {
 					sourceCells[1][1]+1,
 					candidate)
 				steps = append(steps, SolutionStep{
-					strategy:      "Skyscraper",
+					strategy:      strategy,
+					strategyName:  strategy.name,
 					description:   description,
 					sourceContext: otherContext,
 					sourceIndices: otherContextIndices,
 					targetCells:   targetCells,
 					targetValues:  targetValues,
-					effectType:    RemoveCandidate,
+					effectType:    strategy.effectType,
+					difficulty:    strategy.difficulty,
 				})
 			}
 		}
 	}
 	return steps
+}
+
+var skyscraper = SolveStrategy{
+	name:       "Skyscraper",
+	apply:      applySkyscraper,
+	difficulty: 5,
+	effectType: RemoveCandidate,
+}
+
+func applyYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
+	// find cells with candidates XY, XZ, YZ
+	// where XY sees XZ and YZ, but XZ does not see YZ
+	// effect: remove Z as candidates from all cells that see both XZ and YZ
+	var steps []SolutionStep
+	var y, z uint8
+	var anchorCellIdx, otherCellIdx, thirdCellIdx, otherRow, otherCol, anchorRow, anchorCol int
+	contexts := []Context{Row, Column}
+	var description string
+	var currentTargetCell, setKeys []int
+	var contextCandidates map[int][]uint8
+	var seenCells, currentTargetCells, targetCells [][]int
+	var thirdCellCandidates, targetCandidates, anchorCellCandidates, otherCandidates, commonCandidates, targetValues, currentValues, otherValues []uint8
+	for _, context := range contexts {
+		for contextIdx := range 9 {
+			contextCandidates = getContextCandidates(game, context, contextIdx)
+			numCells := len(contextCandidates)
+			if numCells < 2 {
+				continue
+			}
+			keys := maps.Keys(contextCandidates)
+			for currentIdx, currentKey := range keys[:numCells-1] {
+				currentValues = contextCandidates[currentKey]
+				if len(currentValues) != 2 {
+					continue
+				}
+				for _, otherKey := range keys[currentIdx+1:] {
+					otherValues = contextCandidates[otherKey]
+					if len(otherValues) != 2 {
+						continue
+					}
+					commonCandidates = intersect(currentValues, otherValues)
+					if len(commonCandidates) != 1 {
+						continue
+					}
+					setKeys = []int{currentKey, otherKey}
+					for _, anchorKey := range setKeys {
+						anchorCellCandidates = contextCandidates[anchorKey]
+						anchorRow, anchorCol = getCell(context, contextIdx, anchorKey)
+						otherKey = getFirstNonMatchingElement(setKeys, []int{anchorKey})
+						otherRow, otherCol = getCell(context, contextIdx, otherKey)
+						otherCandidates = contextCandidates[otherKey]
+						z = getFirstNonMatchingElement(otherCandidates, commonCandidates)
+						y = getFirstNonMatchingElement(anchorCellCandidates, commonCandidates)
+						targetCandidates = []uint8{y, z}
+						slices.Sort(targetCandidates)
+						seenCells = getAllCellsSeenFromCell(anchorRow, anchorCol)
+						for _, thirdCell := range seenCells {
+							thirdCellCandidates = getCandidates(game, thirdCell[0], thirdCell[1])
+							if game.board[thirdCell[0]][thirdCell[1]] != 0 || !slices.Equal(thirdCellCandidates, targetCandidates) {
+								continue
+							}
+							currentTargetCells = getAllCellsSeenFromCells([][]int{thirdCell, {otherRow, otherCol}})
+							targetCells = [][]int{}
+							targetValues = []uint8{}
+							for _, currentTargetCell = range currentTargetCells {
+								if game.board[currentTargetCell[0]][currentTargetCell[1]] != 0 {
+									continue
+								}
+								if !slices.Contains(getCandidates(game, currentTargetCell[0], currentTargetCell[1]), z) {
+									continue
+								}
+								targetCells = append(targetCells, currentTargetCell)
+								targetValues = append(targetValues, z)
+							}
+							if len(targetCells) == 0 {
+								continue
+							}
+							anchorCellIdx = getContextIdx(Cell, anchorRow, anchorCol)
+							otherCellIdx = getContextIdx(Cell, otherRow, otherCol)
+							thirdCellIdx = getContextIdx(Cell, thirdCell[0], thirdCell[1])
+							description = fmt.Sprintf("%d cannot be in cells", z)
+							for _, currentTargetCell = range targetCells {
+								description += fmt.Sprintf(" row %d col %d", currentTargetCell[0]+1, currentTargetCell[1]+1)
+							description += fmt.Sprintf(
+								"\n\t(anchor: row %d col %d, arms: row %d col %d, row %d col %d)",
+								anchorRow+1,
+								anchorCol+1,
+								otherRow+1,
+								otherCol+1,
+								thirdCell[0]+1,
+								thirdCell[1]+1)
+							}
+							steps = append(steps, SolutionStep{
+								strategy:      strategy,
+								strategyName:  strategy.name,
+								description:   description,
+								sourceContext: Cell,
+								sourceIndices: []int{anchorCellIdx, otherCellIdx, thirdCellIdx},
+								targetCells:   targetCells,
+								targetValues:  targetValues,
+								effectType:    strategy.effectType,
+								difficulty:    strategy.difficulty,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return steps
+}
+
+var yWing = SolveStrategy{
+	name:       "Y-Wing",
+	apply:      applyYWing,
+	difficulty: 5,
+	effectType: RemoveCandidate,
 }
 
 var solveStrategies = []SolveStrategy{
@@ -848,38 +1088,32 @@ var solveStrategies = []SolveStrategy{
 	swordfish,
 	jellyfish,
 	skyscraper,
-	// yWing,
+	yWing,
 }
 
-var strategyDifficulty = map[string]int{
-	"Naked Single":   1,
-	"Hidden Single":  1,
-	"Naked Pair":     2,
-	"Naked Triple":   2,
-	"Naked Quad":     2,
-	"Pointing Group": 2,
-	"Box Reduction":  2,
-	"Hidden Pair":    3,
-	"Hidden Triple":  3,
-	"Hidden Quad":    3,
-	"X-Wing":         4,
-	"Swordfish":      4,
-	"Jellyfish":      4,
-	"Skyscraper":     4,
-	"Y-Wing":         4,
+func getStrategy(name string) SolveStrategy {
+	allStrategies := solveStrategies
+	for _, strategy := range allStrategies {
+		if strategy.name == name {
+			returnStrategy := strategy
+			return returnStrategy
+		}
+	}
+	panic(fmt.Sprintf("Unknown strategy %s", name))
 }
 
-var maxDifficulty = 5
+var maxDifficulty = 6
 
-var validDifficulties = []int{0, 1, 2, 3, 4, maxDifficulty} // 0 for random difficulty
+var validDifficulties = []int{0, 1, 2, 3, 4, 5, maxDifficulty} // 0 for random difficulty
 
 func rateDifficulty(game *Sudoku) int {
+	var strategy SolveStrategy
 	gameCopy := *game
 	var steps []SolutionStep
 	var difficulty int
 	for !isSolved(gameCopy.board) {
-		for _, strategy := range solveStrategies {
-			steps = strategy(&gameCopy)
+		for _, strategy = range solveStrategies {
+			steps = strategy.Apply(&gameCopy)
 			if len(steps) > 0 {
 				break
 			}
@@ -889,7 +1123,7 @@ func rateDifficulty(game *Sudoku) int {
 		}
 		for _, step := range steps {
 			step.Apply(&gameCopy)
-			difficulty = max(difficulty, strategyDifficulty[step.strategy])
+			difficulty = max(difficulty, strategy.difficulty)
 		}
 	}
 	return difficulty
@@ -900,7 +1134,7 @@ func solvableUsingStrategies(game *Sudoku, strategies []SolveStrategy) bool {
 	var steps []SolutionStep
 	for !isSolved(gameCopy.board) {
 		for _, strategy := range strategies {
-			steps = strategy(&gameCopy)
+			steps = strategy.Apply(&gameCopy)
 			if len(steps) > 0 {
 				break
 			}
@@ -913,4 +1147,36 @@ func solvableUsingStrategies(game *Sudoku, strategies []SolveStrategy) bool {
 		}
 	}
 	return true
+}
+
+func getSolutionInvolvingStrategy(game *Sudoku, strategy SolveStrategy) ([]SolutionStep, []int, error) {
+	var strategyIndices []int
+	var currentStrategy SolveStrategy
+	var currentSteps, steps []SolutionStep
+	var containsStrategy bool
+	allStrategies := solveStrategies
+	gameCopy := *game
+	for !isSolved(gameCopy.board) {
+		for _, currentStrategy = range allStrategies {
+			currentSteps = currentStrategy.Apply(&gameCopy)
+			if len(currentSteps) > 0 {
+				break
+			}
+		}
+		if len(currentSteps) == 0 {
+			break
+		}
+		for _, step := range currentSteps {
+			step.Apply(&gameCopy)
+			steps = append(steps, step)
+			if step.strategy.Equal(strategy) {
+				containsStrategy = true
+				strategyIndices = append(strategyIndices, len(steps)-1)
+			}
+		}
+	}
+	if !containsStrategy {
+		return steps, strategyIndices, fmt.Errorf("No solution path contains the desired strategy")
+	}
+	return steps, strategyIndices, nil
 }

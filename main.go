@@ -73,10 +73,11 @@ func main() {
 		cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
 		difficulty = flag.Int("difficulty", 0, "difficulty of the generated sudoku, 0 for random difficulty (default 0)")
 		load       = flag.String("load", "", "load a sudoku from a file")
+		exercise   = flag.String("exercise", "", "generate an exercise for the given strategy")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
-			"Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>]\n")
+			"Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>] [-exercise <strategy>]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -97,6 +98,11 @@ func main() {
 		log.Fatalf("difficulty must be between 0 and %d", len(validDifficulties)-1)
 	} else if *difficulty == 0 {
 		*difficulty = validDifficulties[rand.IntN(len(validDifficulties)-1)+1]
+	}
+
+	if len(*exercise) > 0 {
+		runExercise(*exercise, *cores)
+		return
 	}
 
 	var game Sudoku
