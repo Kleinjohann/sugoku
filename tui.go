@@ -1,33 +1,86 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 )
 
+type State int
+
+const (
+	MainMenu State = iota
+	PickDifficulty
+	PickStrategy
+	PickFileToLoad
+	WaitScreen
+	Playing
+	PickFileToSave
+	WinScreen
+)
+
+type item struct {
+	title, desc string
+}
+
+func (i item) Title() string       { return i.title }
+func (i item) Description() string { return i.desc }
+func (i item) FilterValue() string { return i.title }
+
+var DefaultMenuItems = []list.Item{
+	item{title: "New Game", desc: "Generate a new puzzle, you can choose the difficulty"},
+	item{title: "New Exercise", desc: "Generate a puzzle which requires a specific strategy for the next deduction"},
+	item{title: "Load", desc: "Load a puzzle from a file"},
+	item{title: "Quit", desc: "Exit this program"},
+}
+
+type clearErrorMsg struct{}
+
+func clearErrorAfter(t time.Duration) tea.Cmd {
+	return tea.Tick(t, func(_ time.Time) tea.Msg {
+		return clearErrorMsg{}
+	})
+}
+
 type model struct {
-	game       Sudoku
-	tipsGame   Sudoku
-	editable   [9][9]bool
-	difficulty int
-	cursor     [2]int
-	keys       keyMap
-	help       help.Model
-	strategies []SolutionStep
-	tips       string
-	width      int
-	cores      int
+	err                 error
+	state               State
+	mainMenuModel       list.Model
+	difficultyMenuModel list.Model
+	strategyMenuModel   list.Model
+	filepickerModel     filepicker.Model
+	textinputModel      textinput.Model
+	game                Sudoku
+	tipsGame            Sudoku
+	editable            [9][9]bool
+	difficulty          int
+	cursor              [2]int
+	keys                keyMap
+	help                help.Model
+	strategies          []SolutionStep
+	tips                string
+	width               int
+	boardHeight         int
+	boardWidth          int
+	cores               int
 }
 
 type keyMap struct {
+	Enter             key.Binding
 	Up                key.Binding
 	Down              key.Binding
 	Left              key.Binding
@@ -44,12 +97,16 @@ type keyMap struct {
 	ToggleTips        key.Binding
 	ApplyTips         key.Binding
 	SaveGame          key.Binding
-	SaveEmptyGame     key.Binding
-	NewGame           key.Binding
+	QuitToMenu        key.Binding
 	Quit              key.Binding
+	Abort             key.Binding
 }
 
 var keys = keyMap{
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "choose selected option"),
+	),
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),
 		key.WithHelp("↑/k", "move up"),
@@ -114,32 +171,34 @@ var keys = keyMap{
 		key.WithKeys("s"),
 		key.WithHelp("s", "save game"),
 	),
-	SaveEmptyGame: key.NewBinding(
-		key.WithKeys("S"),
-		key.WithHelp("S", "save original game without progress"),
-	),
-	NewGame: key.NewBinding(
-		key.WithKeys("n"),
-		key.WithHelp("n", "new game"),
+	QuitToMenu: key.NewBinding(
+		key.WithKeys("q"),
+		key.WithHelp("q", "quit to menu"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("q", "esc", "ctrl+c"),
-		key.WithHelp("q", "quit"),
+		key.WithKeys("Q", "esc", "ctrl+c"),
+		key.WithHelp("Q", "quit"),
+	),
+	Abort: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "abort"),
 	),
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.NewGame, k.Quit}
+	return []key.Binding{k.QuitToMenu, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right,
+		{
+			k.Up, k.Down, k.Left, k.Right,
 			k.Up3, k.Down3, k.Left3, k.Right3,
 			k.Number, k.Candidate, k.Delete,
 			k.ComputeCandidates, k.WipeCandidates,
 			k.ToggleTips, k.ApplyTips, k.SaveGame,
-			k.SaveEmptyGame, k.NewGame, k.Quit},
+			k.QuitToMenu, k.Quit,
+		},
 	}
 }
 
@@ -153,43 +212,134 @@ var completedNumberForeground = lipgloss.Color("2")
 var editableForeground = lipgloss.Color("4")
 var uneditableForeground = lipgloss.Color("15")
 
-func initialModel(game Sudoku, editable [9][9]bool, difficulty int, cores int) model {
-	if isEmptyBoard(game.board) {
-		game = generateSudokuParallel(difficulty, -1, cores)
-		for i := range 9 {
-			for j := range 9 {
-				if game.board[i][j] == 0 {
-					editable[i][j] = true
-				}
-			}
-		}
-	}
+func initialModel() model {
+	cores := -1
+	difficulty := 0
+	boardHeight := 31
+	boardWidth := 0
+	game := makeEmptySudoku()
+	var editable [9][9]bool
 	tipsGame := game
 	game.candidates = [9][9][9]bool{}
+	strategyDifficulties := getStrategyDifficulties()
+	var difficultyMenuItems []list.Item
+	difficultyMenuItems = append(difficultyMenuItems, item{title: "0", desc: "Pick a random difficulty"})
+	difficultyMenuItems = append(difficultyMenuItems, item{title: "6", desc: "Not solvable using all of the above strategies"})
+	for difficulty, strategies := range strategyDifficulties {
+		menuItem := item{
+			title: strconv.Itoa(difficulty),
+			desc:  strings.Join(strategies, ", "),
+		}
+		difficultyMenuItems = append(difficultyMenuItems, menuItem)
+	}
+	slices.SortFunc(difficultyMenuItems, func(i, j list.Item) int {
+		return int(i.FilterValue()[0]) - int(j.FilterValue()[0])
+	})
+	var strategyMenuItems []list.Item
+	for _, strategy := range SolveStrategies {
+		menuItem := item{
+			title: strategy.name,
+			desc: fmt.Sprintf(
+				"Difficulty: %d; Effect Type: %s",
+				strategy.difficulty,
+				strategy.effectType.String()),
+		}
+		strategyMenuItems = append(strategyMenuItems, menuItem)
+	}
+	fp := filepicker.New()
+	fp.AllowedTypes = []string{".csv"}
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	fp.CurrentDirectory = path.Join(wd, "archive")
+	fp.Height = boardHeight
+	ti := textinput.New()
 	m := model{
-		game:       game,
-		tipsGame:   tipsGame,
-		editable:   editable,
-		difficulty: difficulty,
-		cursor:     [2]int{4, 4},
-		keys:       keys,
-		help:       help.New(),
-		cores:      cores,
+		mainMenuModel: list.New(
+			DefaultMenuItems,
+			list.NewDefaultDelegate(),
+			boardWidth,
+			boardHeight),
+		difficultyMenuModel: list.New(
+			difficultyMenuItems,
+			list.NewDefaultDelegate(),
+			boardWidth,
+			boardHeight),
+		strategyMenuModel: list.New(
+			strategyMenuItems,
+			list.NewDefaultDelegate(),
+			boardWidth,
+			boardHeight),
+		filepickerModel: fp,
+		textinputModel:   ti,
+		game:            game,
+		tipsGame:        tipsGame,
+		editable:        editable,
+		difficulty:      difficulty,
+		cursor:          [2]int{4, 4},
+		keys:            keys,
+		help:            help.New(),
+		cores:           cores,
+		boardHeight:     boardHeight,
+		boardWidth:      boardWidth,
+	}
+	m.mainMenuModel.Title = "Main Menu"
+	m.mainMenuModel.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
+	}
+	m.mainMenuModel.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
+	}
+	m.difficultyMenuModel.Title = "Choose a Difficulty"
+	m.difficultyMenuModel.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
+	}
+	m.difficultyMenuModel.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
+	}
+	m.strategyMenuModel.Title = "Choose a Strategy"
+	m.strategyMenuModel.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
+	}
+	m.strategyMenuModel.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Enter}
 	}
 	m.help.ShowAll = true
 	return m
 }
 
-func exerciseModel(strategyName string, cores int) model {
-	var editable [9][9]bool
-	exercise := generateStrategyExerciseParallel(strategyName, -1, cores)
-	game := exercise.game
-	firstIdx := exercise.indices[0]
-	computeCandidates(game)
+func newGame(m *model) {
+	game := generateSudokuParallel(1, -1, 1)
+	m.editable = [9][9]bool{}
 	for i := range 9 {
 		for j := range 9 {
 			if game.board[i][j] == 0 {
-				editable[i][j] = true
+				m.editable[i][j] = true
+			}
+		}
+	}
+	tipsGame := game
+	m.game = game
+	m.game.candidates = [9][9][9]bool{}
+	m.tipsGame = tipsGame
+	m.cursor = [2]int{4, 4}
+	m.help = help.New()
+	m.help.ShowAll = true
+	m.tips = ""
+	m.state = Playing
+}
+
+func newExercise(m *model, strategyName string) {
+	exercise := generateStrategyExerciseParallel(strategyName, -1, m.cores)
+	game := exercise.game
+	firstIdx := exercise.indices[0]
+	computeCandidates(game)
+	m.editable = [9][9]bool{}
+	for i := range 9 {
+		for j := range 9 {
+			if game.board[i][j] == 0 {
+				m.editable[i][j] = true
 			}
 		}
 	}
@@ -197,108 +347,283 @@ func exerciseModel(strategyName string, cores int) model {
 		step.Apply(game)
 	}
 	tipsGame := game
-	m := model{
-		game:       *game,
-		tipsGame:   *tipsGame,
-		editable:   editable,
-		difficulty: exercise.strategy.difficulty,
-		strategies: exercise.steps[firstIdx:],
-		cursor:     [2]int{4, 4},
-		keys:       keys,
-		help:       help.New(),
-		cores:      cores,
-	}
+	m.game = *game
+	m.tipsGame = *tipsGame
+	m.game.candidates = [9][9][9]bool{}
+	m.cursor = [2]int{4, 4}
+	m.help = help.New()
 	m.help.ShowAll = true
-	updateTipsString(&m)
-	return m
+	updateTipsString(m)
+	m.state = Playing
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return m.filepickerModel.Init()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
-
 	case tea.WindowSizeMsg:
+		m.mainMenuModel.SetSize(msg.Width, m.boardHeight)
+		m.difficultyMenuModel.SetSize(msg.Width, m.boardHeight)
+		m.strategyMenuModel.SetSize(msg.Width, m.boardHeight)
 		m.width = msg.Width
+		return m, nil
+
+	case clearErrorMsg:
+		m.err = nil
 
 	case tea.KeyMsg:
+		// will be handled depending on state below
 
+	default:
+		switch m.state {
+		case MainMenu:
+			m.mainMenuModel, cmd = m.mainMenuModel.Update(msg)
+			return m, cmd
+		case PickDifficulty:
+			m.difficultyMenuModel, cmd = m.difficultyMenuModel.Update(msg)
+			return m, cmd
+		case PickStrategy:
+			m.strategyMenuModel, cmd = m.strategyMenuModel.Update(msg)
+			return m, cmd
+		case PickFileToLoad:
+			m.filepickerModel, cmd = m.filepickerModel.Update(msg)
+			return m, cmd
+		case PickFileToSave:
+			m.textinputModel, cmd = m.textinputModel.Update(msg)
+			return m, cmd
+		default:
+			return m, nil
+		}
+	}
+
+	keyMsg := msg.(tea.KeyMsg)
+
+	switch m.state {
+
+	case WinScreen:
 		switch {
 
-		case key.Matches(msg, keys.Quit):
+		case key.Matches(keyMsg, keys.Quit):
 			fmt.Print("\n")
 			return m, tea.Quit
 
-		case key.Matches(msg, keys.NewGame):
-			return initialModel(makeEmptySudoku(),
-				[9][9]bool{},
-				m.difficulty,
-				m.cores), nil
+		default:
+			m.state = MainMenu
+			return m, nil
+		}
 
-		case key.Matches(msg, keys.SaveGame):
-			currentTime := time.Now()
-			saveSudoku(fmt.Sprintf("archive/%d%d%d-%d%d-%d.csv",
-				currentTime.Year(),
-				currentTime.Month(),
-				currentTime.Day(),
-				currentTime.Hour(),
-				currentTime.Minute(),
-				currentTime.Second()),
+	case MainMenu:
+		switch {
+
+		case key.Matches(keyMsg, keys.Quit):
+			if m.mainMenuModel.FilterState() != list.Unfiltered {
+				m.mainMenuModel, cmd = m.mainMenuModel.Update(msg)
+				return m, cmd
+			}
+			fmt.Print("\n")
+			return m, tea.Quit
+
+		case key.Matches(keyMsg, keys.Enter):
+			if m.mainMenuModel.FilterState() == list.Filtering {
+				m.mainMenuModel, cmd = m.mainMenuModel.Update(msg)
+				return m, cmd
+			}
+
+			i, ok := m.mainMenuModel.SelectedItem().(item)
+			if !ok {
+				return m, nil
+			}
+			switch i.title {
+			case "New Game":
+				m.state = PickDifficulty
+				return m, nil
+			case "New Exercise":
+				m.state = PickStrategy
+				return m, nil
+			case "Load":
+				m.state = PickFileToLoad
+				return m, nil
+			case "Quit":
+				return m, tea.Quit
+			}
+
+		default:
+			m.mainMenuModel, cmd = m.mainMenuModel.Update(msg)
+			return m, cmd
+		}
+
+	case PickDifficulty:
+		switch {
+
+		case key.Matches(keyMsg, keys.Quit):
+			if m.difficultyMenuModel.FilterState() != list.Unfiltered {
+				m.difficultyMenuModel, cmd = m.difficultyMenuModel.Update(msg)
+				return m, cmd
+			}
+			fmt.Print("\n")
+			return m, tea.Quit
+
+		case key.Matches(keyMsg, keys.Enter):
+			if m.difficultyMenuModel.FilterState() == list.Filtering {
+				m.difficultyMenuModel, cmd = m.difficultyMenuModel.Update(msg)
+				return m, cmd
+			}
+
+			i, ok := m.difficultyMenuModel.SelectedItem().(item)
+			if !ok {
+				return m, nil
+			}
+			m.difficulty = int(i.title[0])
+			newGame(&m)
+			return m, nil
+
+		default:
+			m.difficultyMenuModel, cmd = m.difficultyMenuModel.Update(msg)
+			return m, cmd
+		}
+
+	case PickStrategy:
+		switch {
+
+		case key.Matches(keyMsg, keys.Quit):
+			if m.strategyMenuModel.FilterState() != list.Unfiltered {
+				m.strategyMenuModel, cmd = m.strategyMenuModel.Update(msg)
+				return m, cmd
+			}
+			fmt.Print("\n")
+			return m, tea.Quit
+
+		case key.Matches(keyMsg, keys.Enter):
+			if m.strategyMenuModel.FilterState() == list.Filtering {
+				m.strategyMenuModel, cmd = m.strategyMenuModel.Update(msg)
+				return m, cmd
+			}
+
+			i, ok := m.strategyMenuModel.SelectedItem().(item)
+			if !ok {
+				return m, nil
+			}
+			newExercise(&m, i.title)
+			return m, nil
+
+		default:
+			m.strategyMenuModel, cmd = m.strategyMenuModel.Update(msg)
+			return m, cmd
+		}
+
+	case PickFileToLoad:
+		switch {
+		case key.Matches(keyMsg, keys.Quit):
+			fmt.Print("\n")
+			return m, tea.Quit
+
+		case key.Matches(keyMsg, keys.QuitToMenu):
+			m.state = MainMenu
+			return m, nil
+
+		default:
+			m.filepickerModel, cmd = m.filepickerModel.Update(msg)
+
+			// Did the user select a file?
+			if didSelect, path := m.filepickerModel.DidSelectFile(msg); didSelect {
+				m.game, m.editable = loadSudoku(path)
+				tipsGame := m.game
+				m.game.candidates = [9][9][9]bool{}
+				m.tipsGame = tipsGame
+				m.cursor = [2]int{4, 4}
+				m.help = help.New()
+				m.help.ShowAll = true
+				m.tips = ""
+				m.state = Playing
+				return m, nil
+			}
+
+			// Did the user select a disabled file?
+			// This is only necessary to display an error to the user.
+			if didSelect, path := m.filepickerModel.DidSelectDisabledFile(msg); didSelect {
+				// Let's clear the selectedFile and display an error.
+				m.err = errors.New(path + " is not valid.")
+				return m, tea.Batch(cmd, clearErrorAfter(2*time.Second))
+			}
+
+			return m, cmd
+		}
+
+	case PickFileToSave:
+		switch {
+		case key.Matches(keyMsg, keys.Enter):
+			saveSudoku(
+				fmt.Sprintf("archive/%s.csv", m.textinputModel.Value()),
 				m.game,
 				m.editable)
+			m.state = Playing
+			return m, nil
 
-		case key.Matches(msg, keys.SaveEmptyGame):
+		case key.Matches(keyMsg, keys.Abort):
+			m.state = Playing
+			return m, nil
+
+		default:
+			m.textinputModel, cmd = m.textinputModel.Update(msg)
+			return m, cmd
+		}
+
+	case Playing:
+		switch {
+
+		case key.Matches(keyMsg, keys.Quit):
+			fmt.Print("\n")
+			return m, tea.Quit
+
+		case key.Matches(keyMsg, keys.QuitToMenu):
+			m.state = MainMenu
+
+		case key.Matches(keyMsg, keys.SaveGame):
+			m.state = PickFileToSave
 			currentTime := time.Now()
-			emptyGame := makeEmptySudoku()
-			emptyEditable := [9][9]bool{}
-			for i := range 9 {
-				for j := range 9 {
-					if !m.editable[i][j] {
-						emptyGame.board[i][j] = m.game.board[i][j]
-					} else {
-						emptyEditable[i][j] = true
-					}
-				}
-			}
-			saveSudoku(fmt.Sprintf("archive/%d%d%d-%d%d-%d.csv",
+			m.textinputModel.Placeholder = fmt.Sprintf("%d%02d%02d-%02d%02d-%02d",
 				currentTime.Year(),
 				currentTime.Month(),
 				currentTime.Day(),
 				currentTime.Hour(),
 				currentTime.Minute(),
-				currentTime.Second()),
-				emptyGame,
-				emptyEditable)
+				currentTime.Second())
+			m.textinputModel.Focus()
+			m.textinputModel.CharLimit = 16
+			m.textinputModel.Width = 16
+			m.textinputModel.Prompt = ""
+			return m, nil
 
-		case key.Matches(msg, keys.Up):
+		case key.Matches(keyMsg, keys.Up):
 			m.cursor[0] = (m.cursor[0] - 1 + 9) % 9
 
-		case key.Matches(msg, keys.Down):
+		case key.Matches(keyMsg, keys.Down):
 			m.cursor[0] = (m.cursor[0] + 1) % 9
 
-		case key.Matches(msg, keys.Left):
+		case key.Matches(keyMsg, keys.Left):
 			m.cursor[1] = (m.cursor[1] - 1 + 9) % 9
 
-		case key.Matches(msg, keys.Right):
+		case key.Matches(keyMsg, keys.Right):
 			m.cursor[1] = (m.cursor[1] + 1) % 9
 
-		case key.Matches(msg, keys.Up3):
+		case key.Matches(keyMsg, keys.Up3):
 			m.cursor[0] = (m.cursor[0] - 3 + 9) % 9
 
-		case key.Matches(msg, keys.Down3):
+		case key.Matches(keyMsg, keys.Down3):
 			m.cursor[0] = (m.cursor[0] + 3) % 9
 
-		case key.Matches(msg, keys.Left3):
+		case key.Matches(keyMsg, keys.Left3):
 			m.cursor[1] = (m.cursor[1] - 3 + 9) % 9
 
-		case key.Matches(msg, keys.Right3):
+		case key.Matches(keyMsg, keys.Right3):
 			m.cursor[1] = (m.cursor[1] + 3) % 9
 
-		case key.Matches(msg, keys.Number):
+		case key.Matches(keyMsg, keys.Number):
 			if m.editable[m.cursor[0]][m.cursor[1]] {
-				number := uint8(msg.String()[0] - '0')
+				number := uint8(keyMsg.String()[0] - '0')
 				m.game.board[m.cursor[0]][m.cursor[1]] = number
 				if m.game.solution[m.cursor[0]][m.cursor[1]] == number {
 					m.tipsGame.board[m.cursor[0]][m.cursor[1]] = number
@@ -306,13 +631,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case key.Matches(msg, keys.Candidate):
-			number := getNumberFromShiftedDigit(msg.String())
+		case key.Matches(keyMsg, keys.Candidate):
+			number := getNumberFromShiftedDigit(keyMsg.String())
 			if m.editable[m.cursor[0]][m.cursor[1]] {
 				toggleCandidate(m.cursor[0], m.cursor[1], number, &m.game)
 			}
 
-		case key.Matches(msg, keys.Delete):
+		case key.Matches(keyMsg, keys.Delete):
 			if m.editable[m.cursor[0]][m.cursor[1]] {
 				if m.game.board[m.cursor[0]][m.cursor[1]] == 0 {
 					m.game.candidates[m.cursor[0]][m.cursor[1]] = [9]bool{}
@@ -321,66 +646,112 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case key.Matches(msg, keys.ComputeCandidates):
+		case key.Matches(keyMsg, keys.ComputeCandidates):
 			m.game.candidates = m.tipsGame.candidates
 
-		case key.Matches(msg, keys.WipeCandidates):
+		case key.Matches(keyMsg, keys.WipeCandidates):
 			wipeCandidates(&m.game)
 
-		case key.Matches(msg, keys.ToggleTips):
+		case key.Matches(keyMsg, keys.ToggleTips):
 			toggleTips(&m)
 
-		case key.Matches(msg, keys.ApplyTips):
+		case key.Matches(keyMsg, keys.ApplyTips):
 			applyTips(&m)
 		}
+	}
+
+	if isValidSolvedBoard(m.game.board) {
+		m.state = WinScreen
 	}
 
 	return m, nil
 }
 
 func (m model) View() string {
-	rows := [][]string{}
-	var boxId int
-	for i := range 3 {
-		row := []string{}
-		for j := range 3 {
-			boxId = 3*i + j
-			box := getBoxString(boxId, m, pagga, 3, 7)
-			row = append(row, box)
+	switch m.state {
+
+	case Playing:
+		rows := [][]string{}
+		var boxId int
+		for i := range 3 {
+			row := []string{}
+			for j := range 3 {
+				boxId = 3*i + j
+				box := getBoxString(boxId, m, pagga, 3, 7)
+				row = append(row, box)
+			}
+			rows = append(rows, row)
 		}
-		rows = append(rows, row)
-	}
-	t := table.New().
-		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(uneditableForeground)).
-		BorderRow(true).
-		Rows(rows...)
-	renderedTable := t.Render()
+		t := table.New().
+			Border(lipgloss.NormalBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(uneditableForeground)).
+			BorderRow(true).
+			Rows(rows...)
+		renderedTable := t.Render()
 
-	tableWidth := lipgloss.Width(renderedTable)
-	tableHeight := lipgloss.Height(renderedTable)
+		m.boardWidth = lipgloss.Width(renderedTable)
+		m.boardHeight = lipgloss.Height(renderedTable)
 
-	if isValidSolvedBoard(m.game.board) {
+		m.help.Width = m.width - m.boardWidth - 1
+		helpView := m.help.View(m.keys)
+
+		if len(m.tips) > 0 {
+			updateTipsString(&m)
+		}
+
+		helpView = lipgloss.JoinVertical(lipgloss.Left, helpView, "\n", m.tips)
+
+		return lipgloss.JoinHorizontal(lipgloss.Top,
+			renderedTable,
+			" ",
+			helpView,
+		)
+
+	case WinScreen:
 		m.help.ShowAll = false
+		m.help.Width = m.width
+		helpView := "    " + m.help.View(m.keys)
 		m.tips = ""
 		winMessage := lipgloss.NewStyle().Foreground(completedNumberForeground).Render("You won!")
-		renderedTable = lipgloss.Place(tableWidth, tableHeight, lipgloss.Center, lipgloss.Center, winMessage)
+		renderedTable := lipgloss.Place(m.width, m.boardHeight-1, lipgloss.Center, lipgloss.Center, winMessage)
+		return lipgloss.JoinVertical(lipgloss.Left,
+			renderedTable,
+			helpView,
+		)
+
+	case MainMenu:
+		return lipgloss.NewStyle().Margin(1, 2).Render(m.mainMenuModel.View())
+
+	case PickDifficulty:
+		return lipgloss.NewStyle().Margin(1, 2).Render(m.difficultyMenuModel.View())
+
+	case PickStrategy:
+		return lipgloss.NewStyle().Margin(1, 2).Render(m.strategyMenuModel.View())
+
+	case PickFileToLoad:
+		var s strings.Builder
+		s.WriteString("\n  ")
+		if m.err != nil {
+			s.WriteString(m.filepickerModel.Styles.DisabledFile.Render(m.err.Error()))
+		} else  {
+			s.WriteString("Pick a file:")
+		}
+		s.WriteString("\n\n" + m.filepickerModel.View() + "\n")
+		return s.String()
+
+	case PickFileToSave:
+		return lipgloss.Place(
+			m.width,
+			m.boardHeight-1,
+			lipgloss.Center,
+			lipgloss.Center,
+			fmt.Sprintf(
+				"Saving current puzzle as ./archive/%s.csv\n\n%s",
+				m.textinputModel.View(),
+				"(esc to abort)",) + "\n")
 	}
 
-	m.help.Width = m.width - tableWidth - 1
-	helpView := m.help.View(m.keys)
-
-	if len(m.tips) > 0 {
-		updateTipsString(&m)
-	}
-
-	helpView = lipgloss.JoinVertical(lipgloss.Left, helpView, "\n", m.tips)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		renderedTable,
-		" ",
-		helpView,
-	)
+	return ""
 }
 
 func getCellStyle(m model, row int, col int) lipgloss.Style {
@@ -522,7 +893,7 @@ func updateTipsString(m *model) {
 		m.tips = "You made a mistake!"
 		return
 	}
-	for _, strategy := range solveStrategies {
+	for _, strategy := range SolveStrategies {
 		steps := strategy.Apply(&m.tipsGame)
 		if len(steps) > 0 {
 			m.strategies = steps
@@ -555,16 +926,8 @@ func toggleTips(m *model) {
 	}
 }
 
-func runTui(game Sudoku, editable [9][9]bool, difficulty int, cores int) {
-	p := tea.NewProgram(initialModel(game, editable, difficulty, cores))
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error: %v", err)
-		os.Exit(1)
-	}
-}
-
-func runExercise(strategyName string, cores int) {
-	p := tea.NewProgram(exerciseModel(strategyName, cores))
+func runTui() {
+	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)

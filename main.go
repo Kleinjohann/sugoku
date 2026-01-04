@@ -58,7 +58,13 @@ func printBoard(board [9][9]uint8) {
 	fmt.Println(builder.String())
 }
 
-func runPrint(game Sudoku) {
+func runPrint(difficulty int) {
+	if !slices.Contains(ValidDifficulties, difficulty) {
+		log.Fatalf("difficulty must be between 0 and %d", len(ValidDifficulties)-1)
+	} else if difficulty == 0 {
+		difficulty = ValidDifficulties[rand.IntN(len(ValidDifficulties)-1)+1]
+	}
+	game := generateSudokuParallel(difficulty, -1, -1)
 	println("Generated Sudoku:")
 	printBoard(game.board)
 	println("Solution:")
@@ -68,16 +74,11 @@ func runPrint(game Sudoku) {
 func main() {
 	var (
 		cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
-		print      = flag.Bool("print", false, "print a generated sudoku and its solution and exit")
-		seed       = flag.Int("seed", -1, "seed for random number generator, -1 for random seed")
-		cores      = flag.Int("cores", -1, "number of cores to use, -1 for all cores")
-		difficulty = flag.Int("difficulty", 0, "difficulty of the generated sudoku, 0 for random difficulty (default 0)")
-		load       = flag.String("load", "", "load a sudoku from `file`")
-		exercise   = flag.String("exercise", "", "generate an exercise for `strategy`")
+		print      = flag.Int("print", -1, "print a generated sudoku of `difficulty` and its solution and exit")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
-			"Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>] [-exercise <strategy>]\n")
+			"Usage: sugoku [-print <difficulty>] [-cpuprofile <file>]\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -94,35 +95,9 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	if !slices.Contains(validDifficulties, *difficulty) {
-		log.Fatalf("difficulty must be between 0 and %d", len(validDifficulties)-1)
-	} else if *difficulty == 0 {
-		*difficulty = validDifficulties[rand.IntN(len(validDifficulties)-1)+1]
-	}
-
-	if len(*exercise) > 0 {
-		runExercise(*exercise, *cores)
-		return
-	}
-
-	var game Sudoku
-	var editable [9][9]bool
-	if *load != "" {
-		game, editable = loadSudoku(*load)
+	if *print > -1 {
+		runPrint(*print)
 	} else {
-		game = generateSudokuParallel(*difficulty, *seed, *cores)
-		for i := range 9 {
-			for j := range 9 {
-				if game.board[i][j] == 0 {
-					editable[i][j] = true
-				}
-			}
-		}
-	}
-
-	if *print {
-		runPrint(game)
-	} else {
-		runTui(game, editable, *difficulty, *cores)
+		runTui()
 	}
 }

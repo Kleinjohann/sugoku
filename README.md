@@ -21,21 +21,11 @@ Note that this will install the program in your `$GOPATH/bin` directory. Make su
 ## Usage
 
 ```
-Usage: sugoku [-difficulty <0-5>] [-print] [-cores <int>] [-seed <int>] [-cpuprofile <file>] [-load <file>] [-exercise <strategy>]
-  -cores int
-        number of cores to use, -1 for all cores (default -1)
+Usage: sugoku [-print <difficulty>] [-cpuprofile <file>]
   -cpuprofile file
         write cpu profile to file
-  -difficulty int
-        difficulty of the generated sudoku, 0 for random difficulty (default 0)
-  -exercise string
-        generate an exercise for the given strategy
-  -load string
-        load a sudoku from a file
-  -print
-        print a generated sudoku and its solution and exit
-  -seed int
-        seed for random number generator, -1 for random seed (default -1)
+  -print difficulty
+        print a generated sudoku of difficulty and its solution and exit (default -1)
 ```
 
 A puzzle's difficulty is given by the difficulty of the hardest strategy required to solve it.
@@ -105,10 +95,9 @@ Solution:
 
 ## Planned Improvements
 
-- Improve UX for saving, loading and for exercises
-- Build a main menu for the TUI, move CLI parameters to menu options
 - Implement more solving strategies
 - Improve the TUI
+    - Display a spinner while generating puzzles
     - Allow selection of multiple cells to enter multiple candidates at once
     - Improve keymap and hint formatting for narrow terminal windows
 - Integrate with a simple web server to play Sudoku in the browser

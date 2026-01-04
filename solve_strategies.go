@@ -181,6 +181,16 @@ const (
 	RemoveCandidate
 )
 
+func (effect Effect) String() string {
+	switch effect {
+	case PlaceNumber:
+		return "Place Number"
+	case RemoveCandidate:
+		return "Remove Candidate"
+	}
+	return "Unknown"
+}
+
 type SolutionStep struct {
 	strategy      *SolveStrategy
 	strategyName  string
@@ -1202,7 +1212,7 @@ var xyzWing = SolveStrategy{
 	effectType: RemoveCandidate,
 }
 
-var solveStrategies = []SolveStrategy{
+var SolveStrategies = []SolveStrategy{
 	nakedSingle,
 	hiddenSingle,
 	nakedPair,
@@ -1222,7 +1232,7 @@ var solveStrategies = []SolveStrategy{
 }
 
 func getStrategy(name string) SolveStrategy {
-	allStrategies := solveStrategies
+	allStrategies := SolveStrategies
 	for _, strategy := range allStrategies {
 		if strategy.name == name {
 			returnStrategy := strategy
@@ -1232,9 +1242,19 @@ func getStrategy(name string) SolveStrategy {
 	panic(fmt.Sprintf("Unknown strategy %s", name))
 }
 
-var maxDifficulty = 6
+var MaxDifficulty = 6
 
-var validDifficulties = []int{0, 1, 2, 3, 4, 5, maxDifficulty} // 0 for random difficulty
+var ValidDifficulties = []int{0, 1, 2, 3, 4, 5, MaxDifficulty} // 0 for random difficulty
+
+func getStrategyDifficulties() map[int][]string {
+	difficulties := make(map[int][]string)
+	for _, strategy := range SolveStrategies {
+		difficulties[strategy.difficulty] = append(
+			difficulties[strategy.difficulty],
+			strategy.name)
+	}
+	return difficulties
+}
 
 func rateDifficulty(game *Sudoku) int {
 	var strategy SolveStrategy
@@ -1242,14 +1262,14 @@ func rateDifficulty(game *Sudoku) int {
 	var steps []SolutionStep
 	var difficulty int
 	for !isSolved(gameCopy.board) {
-		for _, strategy = range solveStrategies {
+		for _, strategy = range SolveStrategies {
 			steps = strategy.Apply(&gameCopy)
 			if len(steps) > 0 {
 				break
 			}
 		}
 		if len(steps) == 0 {
-			return maxDifficulty
+			return MaxDifficulty
 		}
 		for _, step := range steps {
 			step.Apply(&gameCopy)
@@ -1284,7 +1304,7 @@ func getSolutionInvolvingStrategy(game *Sudoku, strategy SolveStrategy) ([]Solut
 	var currentStrategy SolveStrategy
 	var currentSteps, steps []SolutionStep
 	var containsStrategy bool
-	allStrategies := solveStrategies
+	allStrategies := SolveStrategies
 	gameCopy := *game
 	for !isSolved(gameCopy.board) {
 		for _, currentStrategy = range allStrategies {

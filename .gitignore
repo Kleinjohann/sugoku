@@ -18,3 +18,10 @@ sugoku
 # Go workspace file
 go.work
 go.work.sum
+
+# Saved puzzles
+archive/
+
+# Saved profiling results
+*.prof
+*.png
