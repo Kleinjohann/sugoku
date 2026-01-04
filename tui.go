@@ -213,8 +213,6 @@ var editableForeground = lipgloss.Color("4")
 var uneditableForeground = lipgloss.Color("15")
 
 func initialModel() model {
-	cores := -1
-	difficulty := 0
 	boardHeight := 31
 	boardWidth := 0
 	game := makeEmptySudoku()
@@ -272,15 +270,15 @@ func initialModel() model {
 			boardWidth,
 			boardHeight),
 		filepickerModel: fp,
-		textinputModel:   ti,
+		textinputModel:  ti,
 		game:            game,
 		tipsGame:        tipsGame,
 		editable:        editable,
-		difficulty:      difficulty,
+		difficulty:      0,
 		cursor:          [2]int{4, 4},
 		keys:            keys,
 		help:            help.New(),
-		cores:           cores,
+		cores:           -1,
 		boardHeight:     boardHeight,
 		boardWidth:      boardWidth,
 	}
@@ -310,7 +308,7 @@ func initialModel() model {
 }
 
 func newGame(m *model) {
-	game := generateSudokuParallel(1, -1, 1)
+	game := generateSudokuParallel(m.difficulty, -1, m.cores)
 	m.editable = [9][9]bool{}
 	for i := range 9 {
 		for j := range 9 {
@@ -476,7 +474,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			m.difficulty = int(i.title[0])
+			difficulty64, err := strconv.ParseInt(i.title, 10, 64)
+			if err != nil {
+				panic(err)
+			}
+			m.difficulty = int(difficulty64)
 			newGame(&m)
 			return m, nil
 
@@ -733,7 +735,7 @@ func (m model) View() string {
 		s.WriteString("\n  ")
 		if m.err != nil {
 			s.WriteString(m.filepickerModel.Styles.DisabledFile.Render(m.err.Error()))
-		} else  {
+		} else {
 			s.WriteString("Pick a file:")
 		}
 		s.WriteString("\n\n" + m.filepickerModel.View() + "\n")
@@ -748,7 +750,7 @@ func (m model) View() string {
 			fmt.Sprintf(
 				"Saving current puzzle as ./archive/%s.csv\n\n%s",
 				m.textinputModel.View(),
-				"(esc to abort)",) + "\n")
+				"(esc to abort)")+"\n")
 	}
 
 	return ""

@@ -706,7 +706,7 @@ func applyPointingGroup(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 var pointingGroup = SolveStrategy{
 	name:       "Pointing Group",
 	apply:      applyPointingGroup,
-	difficulty: 2,
+	difficulty: 3,
 	effectType: RemoveCandidate,
 }
 
@@ -781,7 +781,7 @@ func applyBoxReduction(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 var boxReduction = SolveStrategy{
 	name:       "Box Reduction",
 	apply:      applyBoxReduction,
-	difficulty: 2,
+	difficulty: 3,
 	effectType: RemoveCandidate,
 }
 
@@ -1056,7 +1056,7 @@ func applyXYWing(game *Sudoku, strategy *SolveStrategy) []SolutionStep {
 								description += fmt.Sprintf(" row %d col %d", currentTargetCell[0]+1, currentTargetCell[1]+1)
 							}
 							description += fmt.Sprintf(
-								"\n\t(anchor: row %d col %d, arms: row %d col %d, row %d col %d)",
+								"\n\t(pivot: row %d col %d; pincers: row %d col %d, row %d col %d)",
 								anchorRow+1,
 								anchorCol+1,
 								otherRow+1,
